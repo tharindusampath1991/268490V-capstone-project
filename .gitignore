@@ -1,0 +1,27 @@
+# Secrets. The ENTSO-E token lives in .env and is never committed.
+.env
+.env.*
+!.env.example
+
+# Data. Raw downloads and processed tables are rebuilt by scripts.
+data/
+
+# Virtual environment
+.venv/
+
+# Python and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.cache/
+
+# Model weights and checkpoints
+models/
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.bin
+
+# Notebook checkpoints
+.ipynb_checkpoints/
