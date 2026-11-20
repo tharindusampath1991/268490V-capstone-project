@@ -1,0 +1,93 @@
+# Data notes
+
+How the data is obtained, cleaned and validated. This file grows as each pipeline step is built.
+
+## ENTSO-E client behaviour
+
+Read from the installed `entsoe-py` 1.0.0 source on 2026-11-20. Only the points under "Smoke test" below are confirmed against a real response.
+
+Smoke test on 2026-11-20: DE_LU, delivery day 2026-11-18, through `call_entsoe` and `fetch_prices`.
+
+- The token was accepted. Every request returned HTTP 200.
+- The client returned a float series with no name and a Europe/Berlin index. It had 97 values, from 2026-11-18 00:00 to 2026-11-19 00:00, so the end timestamp is included.
+- `fetch_prices` returned 96 rows with a UTC index, from 2026-11-17 23:00 to 2026-11-18 22:45. `check_prices` found 0 missing, 0 unexpected and 0 repeated timestamps.
+- One price query cost 2 requests. The second request asks for the next page of documents and gets the "no data" answer with HTTP 200.
+
+- `EntsoePandasClient.query_day_ahead_prices` returns one series per call. It keeps hourly values before 2025-10-01 and 15-minute values from that date. The switch is defined in Europe/Amsterdam time. The `resolution` argument is deprecated and has no effect.
+- Before the switch, the client merges every resolution it received and keeps the first value in each hour. From the switch, it keeps all values without resampling. Duplicate timestamps within a year block are collapsed to the last valid value. The returned series carries no resolution marker.
+- For DE_LU the client requests auction sequence 1 only.
+- The returned index is in the zone's local time zone: Europe/Berlin for DE_LU, Europe/Paris for FR, Europe/Madrid for ES, Europe/Stockholm for SE_1 to SE_4.
+- The end timestamp of a query is included in the result.
+- A price query is split into blocks of at most one year, and each block is fetched 100 documents at a time. The client also pads each query by one day at both ends. One zone and year therefore costs several requests.
+- Load forecast and wind and solar forecast queries are split into one request per month.
+- The client makes up to 3 attempts, 60 seconds apart, and only for connection errors and HTTP 527 or 599. It has no timeout unless one is passed.
+- The client masks the token in the messages of HTTP and connection errors. The exception object still holds the request, and the request URL contains the token.
+- The production type names in the library are Solar, Wind Offshore and Wind Onshore. The live test under "Forecast downloads" confirmed these names for DE_LU and SE_3.
+- Observed on 2026-11-20 with numpy 2.5.5 and pandas 2.3.3: `pd.Timedelta(days=1)` raises a DeprecationWarning about the 'generic' NumPy timedelta unit, which "will raise an error in the future". `query_day_ahead_prices` calls `pd.Timedelta(days=1)`. numpy is not pinned in `requirements.txt`. Project code uses `datetime.timedelta` for day steps.
+
+## Raw price format
+
+Decided on 2026-11-20 (DECISIONS entry 10): the raw price files hold the pandas client output, with the index in UTC.
+
+The client hides which resolution each value came from (second bullet above), so the project checks the result itself:
+
+- The index has no duplicate timestamps.
+- Each delivery day has the expected number of values: 24 hourly values before the switch and 96 quarter-hour values from it. Clock-change days have 23 or 25 hours, and 92 or 100 quarter-hours.
+
+The checks are in `check_prices` in `src/epf/data/download_prices.py`. The downloader prints these counts per zone and year: expected and missing market time units, delivery days with gaps, prices at unexpected times and repeated timestamps. It reports the counts and does not change the data.
+
+First full run on 2026-11-20, delivery days 2019-01-01 to 2026-11-19, 7 zones:
+
+- 56 files, one per zone and year. The run took 82 minutes. The client retried three requests on its own (HTTP 599 twice, one connection error).
+- Every zone and year had all expected values: 8760 or 8784 in the hourly years, 15387 in 2025 and 31008 in 2026.
+- No missing value, no price at an unexpected time and no repeated timestamp in any zone or year.
+
+Before the switch the client resamples each answer to hourly values with `resample('h').first()` (read from the source). A missing hour inside an answer can therefore arrive as a row with an empty price. The check counts an empty price as missing.
+
+## Raw ENTSO-E cache
+
+Built on 2026-11-20 in `src/epf/data/entsoe_cache.py`. The price download, the coverage gate and the Energy-Charts cross-check use it.
+
+- One Parquet file per dataset, zone and year: `{dataset}/{ZONE}_{YEAR}.parquet` under the cache folder. The cache folder is `data/raw/entsoe/` (DECISIONS entry 5).
+- `manifest.json` in the cache folder has one entry per saved file: query start, query end, download time, row count and `entsoe-py` version. All times are in UTC.
+- A saved file is reused only when the manifest shows the same query start and end. A partial year is downloaded again when the requested end moves.
+- An empty answer is never saved. It is asked again on the next run.
+- A saved file that was deleted by hand is downloaded again.
+
+## Forecast downloads
+
+Read from the installed `entsoe-py` 1.0.0 source on 2026-11-20. Code: `src/epf/data/download_forecasts.py`.
+
+- `query_load_forecast` uses process type A01 (day ahead) by default and returns one column, `Forecasted Load`.
+- `query_wind_and_solar_forecast` uses process type A01 by default and returns one column per production type. Its parser drops repeated timestamps within a series and keeps the first value.
+- Both queries cost one request per month. Both return local time and include the end timestamp.
+- The project stores each forecast frame as the client returns it, with the index in UTC and cut to [start, end). Repeated timestamps are kept in the raw file. The coverage gate counts them.
+
+Live test on 2026-11-20, delivery days 2026-11-01 to 2026-11-03, 4 requests, all HTTP 200:
+
+- DE_LU load forecast: column `Forecasted Load`, 15-minute values, 288 rows, every hour present.
+- DE_LU wind and solar forecast: columns `Solar`, `Wind Offshore` and `Wind Onshore`, 15-minute values.
+- SE_3 load forecast: column `Forecasted Load`, 15-minute values.
+- SE_3 wind and solar forecast: columns `Solar` and `Wind Onshore`, 15-minute values. So a Swedish solar forecast exists for these days. Its coverage over all years is a result of the coverage gate.
+- No repeated timestamp in these four answers.
+
+## Energy-Charts price cross-check
+
+Checked against the live API and its endpoint catalogue (`https://api.energy-charts.info/openapi.json`) on 2026-11-20. Code: `src/epf/data/download_energy_charts.py` and `src/epf/data/crosscheck_prices.py`.
+
+- Endpoint: `/v2/price` with the parameters `bzn`, `start` and `end`. A day such as `2026-11-18` is read in the zone's local time. With `start` equal to `end` the API returned the 96 values of that day, so the end day is included.
+- Each record has a timestamp with its UTC offset and the value `day_ahead_price`. The unit is `EUR / MWh`.
+- A full year in one request works. DE-LU 2019 returned 8760 records and DE-LU 2025 returned 15387, hourly before 2025-10-01 and 15-minute from then.
+- Licence, as stated in the `license` field of each answer:
+  - DE-LU, FR and SE4: CC BY 4.0 from Bundesnetzagentur | SMARD.de.
+  - ES, SE1, SE2 and SE3: "for private and internal use only". External use of the data "in its raw or derived form" is prohibited.
+- All zones are free to query. The cross-check downloads all seven zones (DECISIONS entry 12). Each saved file has a column `open_licence`, which is true when the answer stated CC BY 4.0. Results for DE_LU, FR and SE_4 go into `docs/price_crosscheck.md`. Results for ES, SE_1, SE_2 and SE_3 go only into `data/local/price_crosscheck_restricted.md`, which git ignores.
+- Rate limit, from the catalogue: 2 price requests per minute per client. A request over the limit gets HTTP 429 with a `Retry-After` header. Observed: a 429 on the sixth request when requests were 6 seconds apart. The code waits 31 seconds before each request and honours `Retry-After` once.
+- Energy-Charts answers are saved under `data/raw/energy_charts/prices/` through the same cache code. The manifest field `entsoe_py_version` has no meaning for these files.
+
+Result of the full run on 2026-11-20, delivery days 2019-01-01 to 2026-11-19 (`docs/price_crosscheck.md`):
+
+- DE_LU, FR and SE_4: every ENTSO-E timestamp had an Energy-Charts price, in all 8 years. No pair differed by more than 0.01 EUR/MWh, and the largest difference was 0.00. Neither source had a timestamp the other lacked.
+- ES, SE_1, SE_2 and SE_3 were checked in the same run. Their results are in the local file only.
+- An exact match suggests that both sources draw on the same upstream data. The check therefore mainly confirms the zone mapping, the time alignment and the handling of the 15-minute switch in this pipeline. It is not an independent measurement of the prices.
+- The run needed 56 requests at 2 per minute, about 30 minutes in total.

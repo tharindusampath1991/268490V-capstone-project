@@ -1,0 +1,118 @@
+# Decisions
+
+Numbered entries: decision, reason, alternative rejected, date.
+
+## 1. Add SE1–SE4 as extra zones in M2
+- Date: 2026-11-19
+- Decision: SE1, SE2, SE3 and SE4 are added as extra zones in Milestone 2, next to the three core zones approved in Milestone 1. They use the same pipeline through config entries, with no zone-specific tuning or features.
+- Reason: To extend the scope a little beyond the three approved zones. A zone is added through a config entry and runs through the same pipeline, so the Swedish zones add no technical difficulty.
+- Alternatives rejected: SE3 only. Sweden after M2.
+- Risks: Milestone 1 was approved with 3 zones. Seven zones with 14 days to M2.
+
+## 2. Python 3.12 in `.venv`
+- Date: 2026-11-20
+- Decision: The project runs on Python 3.12 in a virtual environment named `.venv`.
+- Reason: `entsoe-py` 1.0.0 requires Python 3.12 or newer. Every other planned library declares Python 3.12 support on PyPI.
+- Alternatives rejected: Python 3.11 with `entsoe-py` 0.8.1, the newest version that installs there. Python 3.14, the newest Python, with the highest chance of an untested dependency.
+
+## 3. Pin direct dependencies only, with pandas 2.3.3
+- Date: 2026-11-20
+- Decision: `requirements.txt` lists only the packages the code imports, each pinned with `==`. A package is added when the code first imports it. pandas is pinned to 2.3.3.
+- Reason: Every line can be explained. `statsforecast` 2.1.1 requires pandas below 3.0, so a pandas 3 pin would have to change when the statistical baseline is added. A dry-run resolve of the full planned library set on 2026-11-20 chose pandas 2.3.3.
+- Alternative rejected: A full `pip freeze`. It is exact, but it lists packages the code never imports, and packages that pip installs only on Windows, such as `colorama`.
+- Exception, added 2026-11-20: numpy is pinned to 2.5.5 although the code does not import it. With numpy 2.5.5 and pandas 2.3.3, `pd.Timedelta(days=1)` raises a DeprecationWarning that says it "will raise an error in the future". `entsoe-py` 1.0.0 calls it in `query_day_ahead_prices`. An unpinned numpy could therefore break the price download on a later fresh install.
+
+## 4. One shared ENTSO-E fetch-and-cache module
+- Date: 2026-11-20
+- Decision: The token loading, fetch and cache functions move from `scripts/check_coverage.py` into `src/epf/data/`. The gate script and the price downloader both import them.
+- Reason: One code path and one cache. The gate had not been run, so no cached files need migrating.
+- Alternatives rejected: A separate downloader with its own cache. Running the gate as it was and reusing its files, which keeps its cache flaws.
+
+## 5. One cache file per zone and year, with a manifest
+- Date: 2026-11-20
+- Decision: Raw ENTSO-E downloads are cached as `data/raw/entsoe/{dataset}/{ZONE}_{YEAR}.parquet`. A manifest records the query start, query end, download time in UTC, row count and `entsoe-py` version of each file. A saved file is reused only when the manifest shows the same query start and end. An empty answer is never saved.
+- Reason: The first version of the gate cache treated a partial current-year file as finished once the calendar year changed, and kept an empty file forever. With the same-query rule a partial year is downloaded again when the requested end moves, and it is reused once `DATA_END` is frozen.
+- Changed on 2026-11-20: The first wording said that a year counts as complete only when the query end reaches the end of that year. Under that rule the current year is never complete, so every rebuild would download it again and the frozen snapshot of PROJECT_CONTEXT §4 could change.
+- Alternatives rejected: One file per zone and month, which gives twelve times more files for no gain. One file per zone for the whole range, which downloads every year again to add one day.
+
+## 6. Every ENTSO-E call goes through one error wrapper
+- Date: 2026-11-20
+- Decision: All ENTSO-E calls pass through one function. On failure it raises a project error that carries only the exception type and the HTTP status. Logging is never set to DEBUG for `urllib3`.
+- Reason: The request URL carries the token. `entsoe-py` 1.0.0 masks the token in error messages, but the exception object still holds the request with the full URL, and `urllib3` writes the request path to its DEBUG log.
+- Alternative rejected: Catching `requests` errors once in `main`. Other exception types would print a raw traceback.
+- Added 2026-11-20: The project error is raised after the `except` block has ended, so it holds no link to the original error. Alternative rejected: `raise ... from None` inside the block. A test showed that the new error then still holds the original in `__context__`, with the request URL.
+
+## 7. Energy-Charts is a cross-check only
+- Date: 2026-11-20
+- Decision: ENTSO-E is the single source for prices. Energy-Charts prices are downloaded for the full history and compared with a tolerance of 0.01 EUR/MWh. Differences are reported in `docs/price_crosscheck.md`. They are never used to correct or fill ENTSO-E values.
+- Reason: One source keeps the data lineage simple. A full comparison finds shifted hours that daily means would hide.
+- Alternatives rejected: Comparing a sample or daily means only. Failing the run on a mismatch. Filling ENTSO-E gaps from Energy-Charts.
+- Condition: If the Energy-Charts API cannot return a full year per request, the comparison falls back to a sample: one week per zone and year, the weeks around 1 Oct 2025, and the clock-change days.
+
+## 8. The token is read by a small parser of our own
+- Date: 2026-11-20
+- Decision: The `.env` file is read by the short parser already in the gate script, with the path resolved from the repo root.
+- Reason: It is about ten lines and adds no dependency.
+- Alternative rejected: `python-dotenv`.
+
+## 9. Market time zone and the 15-minute switch date live in config
+- Date: 2026-11-20
+- Decision: `config/config.yaml` holds the market time zone (Europe/Berlin) and the first 15-minute delivery day (2025-10-01). The gate script's Europe/Brussels constant is replaced by the config value.
+- Reason: One definition for all code. Europe/Berlin and Europe/Brussels have the same UTC offset over the whole data period, so results do not change.
+- Alternative rejected: Constants in each script.
+
+## 10. Raw price files hold the `entsoe-py` pandas client output
+- Date: 2026-11-20
+- Decision: The raw price layer stores the series returned by `EntsoePandasClient.query_day_ahead_prices`, with the index converted to UTC and cut to [start, end). The project adds its own checks on top: a unique index and the expected number of values on every delivery day.
+- Reason: The client already returns the main day-ahead auction price at the market's resolution, hourly before 2025-10-01 and 15-minute from then. This is far less code to defend than a second parser path. The Energy-Charts cross-check gives independent evidence.
+- Alternative rejected: Saving the XML from the raw client and selecting the resolution in project code. It shows each resolution separately, but it needs paging and the DE_LU auction-sequence rule in our code.
+- Limit: The client merges resolutions and collapses duplicate timestamps before we see them (DATA_NOTES). The one-value-per-market-time-unit check therefore runs on the client's output, not on the raw API response.
+
+## 11. Editable install through a minimal `pyproject.toml`
+- Date: 2026-11-20
+- Decision: `src/epf` is installed in editable mode by the `-e .` line in `requirements.txt`. `pyproject.toml` holds only the package metadata, the `src` layout and the pytest test path. Dependencies stay in `requirements.txt`.
+- Reason: After one setup command, the tests and `python -m epf...` commands can import the package from any folder.
+- Alternative rejected: Setting `PYTHONPATH=src` by hand. It differs per operating system and is easy to forget on a fresh clone.
+
+## 12. Energy-Charts prices are downloaded for all seven zones; restricted results stay local
+- Date: 2026-11-20
+- Decision: The cross-check of entry 7 downloads Energy-Charts prices for all seven zones, with the `bzn` codes DE-LU, FR, ES, SE1, SE2, SE3 and SE4. Each saved file records whether the API stated CC BY 4.0 for that answer. Results for CC BY 4.0 zones go into the committed `docs/price_crosscheck.md`. Results for the other zones go only into `data/local/price_crosscheck_restricted.md`, which git ignores. The committed report names those zones and shows none of their numbers. Raw Energy-Charts files are never committed.
+- Reason: All zones are free to query. Only the licence differs. On 2026-11-20 the `license` field of the API stated CC BY 4.0 (Bundesnetzagentur | SMARD.de) for DE-LU, FR and SE4, and "private and internal use only" for ES, SE1, SE2 and SE3, with external use of raw or derived data prohibited. A check on the owner's machine is internal use. A public repository is not.
+- Alternatives rejected: Checking only the three CC BY 4.0 zones, which leaves ES and three Swedish zones without an independent check. Publishing the results of all seven zones, which the licence of four zones does not allow.
+- Note: This entry refines entry 7. PROJECT_CONTEXT §3 lists Energy-Charts as CC BY 4.0 without this limit.
+
+## 13. A "no data" answer raises its own error
+- Date: 2026-11-20
+- Decision: `call_entsoe` raises `EntsoeNoDataError` when ENTSO-E has no data for a query, and `EntsoeRequestError` for every other failure. The fetch functions turn the first into an empty frame.
+- Reason: A missing series is a result to record, for example a solar forecast that a zone does not publish. A failed call must stop the run. The two need different handling.
+- Alternative rejected: Returning an empty frame from the wrapper for both cases. A caller can then mistake a failed call for a finished download.
+
+## 14. `data.end` is the last delivery day included
+- Date: 2026-11-20
+- Decision: `data.end` in the config names the last delivery day that belongs to the data. The data period ends at 00:00 market time on the following day. While `data.end` is not set, the period ends at 00:00 today.
+- Reason: "DATA_END" reads naturally as the last day in the data. The following day is computed with calendar-day arithmetic, so a clock-change day gives the right midnight.
+- Alternative rejected: An exclusive end date, which is easy to misread by one day.
+
+## 15. ENTSO-E requests time out after 120 seconds
+- Date: 2026-11-20
+- Decision: The `entsoe-py` client is created with a timeout of 120 seconds per request, set in the config.
+- Reason: The client has no timeout by default. A stalled request would then hang a download of several hundred requests with no message. After a timeout the run stops with a clear error and resumes from the saved files.
+- Alternative rejected: The client default.
+
+## 16. Price checks report counts and change nothing
+- Date: 2026-11-20
+- Decision: The price downloader counts missing market time units, delivery days with gaps, prices at unexpected times and repeated timestamps. It prints the counts and neither changes the data nor stops the run.
+- Reason: The raw layer keeps what ENTSO-E returned. Gaps are judged by the coverage gate and handled in the cleaning step, where each rule can be documented.
+- Alternative rejected: Stopping on the first repeated timestamp, which would block all zones on one bad year. Dropping repeated timestamps silently, as the first gate script did.
+
+## 17. The coverage gate logic lives in the package
+- Date: 2026-11-20
+- Decision: The gate logic is in `src/epf/data/coverage_gate.py`. `scripts/check_coverage.py` only reads the config, runs the logic and writes the report. Repeated timestamps in forecasts are kept in the raw files and counted in the report. Each forecast column is marked keep or drop per zone by the forecast threshold.
+- Reason: Code in the package can be tested and shares the cache, the error wrapper and the price checks with the downloader. The first script had its own copies of these and its own constants.
+- Alternative rejected: Keeping the logic inside the script.
+
+## 18. Energy-Charts requests are 31 seconds apart
+- Date: 2026-11-20
+- Decision: The cross-check waits 31 seconds before each Energy-Charts request. When the API answers HTTP 429, it waits the seconds of the `Retry-After` header and asks once more.
+- Reason: The API's endpoint catalogue states a limit of 2 price requests per minute and asks clients to honour `Retry-After`. With 6 seconds between requests the sixth request got HTTP 429.
+- Alternative rejected: A shorter fixed pause. Retrying without limit.

@@ -24,7 +24,7 @@ Scope, forecast protocol, models, plan: @docs/PROJECT_CONTEXT.md
 - Until M2 is submitted, work only on the M2 checklist (PROJECT_CONTEXT §2).
 
 ## Conventions
-- Python 3.11, venv + pip, pinned `requirements.txt` (confirm, PROJECT_CONTEXT §11).
+- Python 3.12, venv + pip, pinned `requirements.txt`. `entsoe-py` 1.0.0 needs Python 3.12 or newer.
 - Config in `config/config.yaml`. No hard-coded dates, zones or paths. Adding a zone is a config entry only. Seeds set through one helper.
 - UTC internally. Europe/Berlin only to define delivery days and for display.
 - Pipeline code in `src/epf/`, runnable from the CLI. Notebooks for EDA only.
@@ -34,13 +34,18 @@ Scope, forecast protocol, models, plan: @docs/PROJECT_CONTEXT.md
 
 ## Commands
 Fill in as they come to exist.
-- Setup:
-- Tests:
+- Setup: `python3.12 -m venv .venv`, then `.venv\Scripts\python -m pip install -r requirements.txt`
+- Tests: `.venv\Scripts\python -m pytest`
+- Download prices: `.venv\Scripts\python -m epf.data.download_prices` (first full run: about 80 minutes)
+- Price cross-check: `.venv\Scripts\python -m epf.data.crosscheck_prices` (after the price download, about 30 minutes)
 - Build data:
 - Backtest:
 
 ## Commits
-Conventional Commits prefixes: `feat`, `fix`, `data`, `exp`, `docs`, `test`, `chore`. Subject under 72 characters, imperative, describing the actual change. Body says why when it is not obvious.
+- No type prefixes such as `feat:`, `docs:` or `data:`. They read as machine-written. Start the subject with a capital letter and a verb, for example "Add price downloader".
+- Subject under 72 characters, describing the actual change.
+- Write it the way I would by hand: short and plain. Add a body of one to three short sentences only when the reason is not obvious.
+- No bullet lists, headings, templates, trailers or generated-by lines in a commit message.
 
 ## End of session
 Update `docs/PROGRESS.md` (date, done, next, blockers) and list proposed DECISIONS.md entries.

@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — CS5998 Capstone
 
-Owner: A A T Sampath (268490V) · Last updated: 2026-11-19
+Owner: A A T Sampath (268490V) · Last updated: 2026-11-20
 
 ## 0. Snapshot
 
@@ -73,7 +73,7 @@ Should-have for M2 (in the M1 plan for weeks 5–8): Chronos-2 and TimesFM 2.5 z
 | Source | Use | Access |
 |---|---|---|
 | ENTSO-E Transparency Platform | Day-ahead prices, actual load, day-ahead load forecast, day-ahead wind and solar forecast | Free API, needs registration and a security token. Python client: `entsoe-py` (area keys `DE_LU`, `FR`, `ES`, `SE_1`, `SE_2`, `SE_3`, `SE_4`) |
-| Energy-Charts API (Fraunhofer ISE) | Prices and generation, backup and cross-check | Free, no key, CC BY 4.0 |
+| Energy-Charts API (Fraunhofer ISE) | Prices and generation, backup and cross-check | Free, no key. The licence differs by zone: CC BY 4.0 for DE-LU, FR and SE4, private and internal use only for ES, SE1, SE2 and SE3 (checked 2026-11-20, DECISIONS entry 12) |
 | Open-Meteo | Archived forecasts of temperature, wind, solar radiation | Free for non-commercial use, no key, CC BY 4.0 |
 | Python `holidays` | Public holidays per country. Sweden: `public` plus `de_facto` categories | Open source |
 
@@ -215,7 +215,7 @@ The Swedish zones run every model with the hyperparameters and context lengths c
 - Config marks each zone as `core` or `extra`. Every run processes core zones first, so Swedish zones never block core results.
 - Tooling: Claude Code in the repo writes and runs code. The Claude Project is for planning, review, report and viva prep.
 - `docs/PROJECT_CONTEXT.md` is the master copy of this file. Re-upload it to the Project when it changes.
-- Commits: Conventional Commits prefixes (`feat`, `fix`, `data`, `exp`, `docs`, `test`, `chore`). Subject under 72 characters, imperative. Body says why when it is not obvious.
+- Commits: a plain subject without type prefixes, under 72 characters, starting with a verb. A short body only when the reason is not obvious. Written the way I would write it by hand (CLAUDE.md, Commits).
 - `docs/PROGRESS.md`: one row per day with date, done, next, blockers.
 - `docs/DECISIONS.md`: numbered entries with decision, reason, alternative rejected, date.
 
@@ -255,7 +255,7 @@ Cut order if behind (first cut first): Swedish work in the order given in §1, t
 - [x] M1 feedback: approved as submitted, no scope changes
 - [x] ENTSO-E token: in hand
 - [ ] Laptop: OS, CPU, RAM, GPU:
-- [ ] Python version and env tool (default: 3.11, venv + pip):
+- [x] Python version and env tool: 3.12, venv + pip. `entsoe-py` 1.0.0 needs Python 3.12 or newer (DECISIONS entry 2)
 - [ ] Hours available on weekdays and weekends:
 - [x] Swedish zones: all four (SE1, SE2, SE3, SE4), in M2
 - [ ] Tell the supervisor about the Sweden addition, if one is assigned:
