@@ -1,0 +1,233 @@
+"""Coverage gate for the ENTSO-E inputs (PROJECT_CONTEXT section 3.1).
+
+For each zone and year the gate measures how much of the expected data exists:
+  prices          share of market time units with a price
+  load forecast   share of hours with a value
+  wind and solar  share of hours with a value, per production type
+
+A zone passes when, in every year, prices reach price_min_share and the load
+forecast and at least one wind column reach forecast_min_share. Solar does not
+decide the gate. A forecast column below forecast_min_share in any year is
+marked "drop" for that zone.
+"""
+
+from datetime import timedelta
+from functools import partial
+from pathlib import Path
+
+import pandas as pd
+from entsoe import EntsoePandasClient
+
+from epf.config import Zone
+from epf.data.download_forecasts import fetch_load_forecast, fetch_wind_solar_forecast
+from epf.data.download_prices import check_prices, fetch_prices
+from epf.data.entsoe_cache import cached_fetch
+from epf.data.market_time import hourly_index
+
+FETCHERS = {
+    "prices": fetch_prices,
+    "load_forecast": fetch_load_forecast,
+    "wind_solar_forecast": fetch_wind_solar_forecast,
+}
+NO_DATA = "(no data)"
+YearRange = tuple[int, pd.Timestamp, pd.Timestamp]
+
+
+def native_resolution(index: pd.DatetimeIndex) -> str:
+    """Return the most common step between timestamps, for example "15min".
+
+    Output: "-" when the index has fewer than two timestamps.
+    """
+    if len(index) < 2:
+        return "-"
+    step = index.to_series().diff().mode().iloc[0]
+    return f"{int(step.total_seconds() // 60)}min"
+
+
+def price_coverage(data: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp,
+                   quarter_hour_start: pd.Timestamp) -> dict:
+    """Return the coverage row of one zone's prices in [start, end).
+
+    Input: a frame from fetch_prices, start and end in market time.
+    Output: the share of market time units with a price, plus the counts
+        from check_prices.
+    """
+    counts = check_prices(data, start, end, quarter_hour_start)
+    present = counts["expected"] - counts["missing"]
+    return {
+        "column": "price",
+        "resolution": native_resolution(data.index),
+        "expected": counts["expected"],
+        "present": present,
+        "share": present / counts["expected"],
+        "days_with_gaps": counts["days_with_gaps"],
+        "unexpected": counts["unexpected"],
+        "duplicates": counts["duplicates"],
+    }
+
+
+def hourly_coverage(data: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> list[dict]:
+    """Return one coverage row per column: the share of hours in [start, end) with a value.
+
+    Input: a forecast frame with a UTC index, start and end in market time.
+    Output: an hour counts as present when it holds at least one value, so
+        hourly and 15-minute series are measured the same way. An empty frame
+        gives one row named "(no data)" with share 0.
+    """
+    expected = hourly_index(start, end)
+    shared = {
+        "resolution": native_resolution(data.index),
+        "expected": len(expected),
+        "days_with_gaps": None,
+        "unexpected": None,
+        "duplicates": int(data.index.duplicated().sum()),
+    }
+    if data.empty:
+        return [{"column": NO_DATA, "present": 0, "share": 0.0, **shared}]
+    hourly = data.resample("h").mean().reindex(expected)
+    rows = []
+    for column in hourly.columns:
+        present = int(hourly[column].notna().sum())
+        rows.append({"column": str(column), "present": present,
+                     "share": present / len(expected), **shared})
+    return rows
+
+
+def collect_coverage(client: EntsoePandasClient, zones: list[Zone], ranges: list[YearRange],
+                     cache_dir: Path, quarter_hour_start: pd.Timestamp) -> pd.DataFrame:
+    """Download every dataset, or read it from the cache, and measure its coverage.
+
+    Input: zones in the order they should run, year pieces from year_ranges,
+        the folder of the ENTSO-E cache and the first 15-minute delivery day.
+    Output: one row per zone, dataset, column and year.
+    """
+    rows = []
+    for zone in zones:
+        for dataset, fetch in FETCHERS.items():
+            for year, start, end in ranges:
+                print(f"{zone.key:6s} {dataset:20s} {year}", flush=True)
+                data = cached_fetch(partial(fetch, client, zone.key),
+                                    cache_dir, dataset, zone.key, year, start, end)
+                if dataset == "prices":
+                    found = [price_coverage(data, start, end, quarter_hour_start)]
+                else:
+                    found = hourly_coverage(data, start, end)
+                rows += [{"zone": zone.key, "dataset": dataset, "year": year, **row}
+                         for row in found]
+    return pd.DataFrame(rows)
+
+
+def worst_share(coverage: pd.DataFrame, zone_key: str, dataset: str, years: list[int],
+                column_prefix: str | None = None) -> float:
+    """Return the lowest yearly share of one zone and dataset.
+
+    Input: coverage rows, and the years that must all be covered. With a
+        column prefix, only columns that start with it are used.
+    Output: the best matching column is taken in each year, then the lowest
+        year. A year without a matching row counts as 0.
+    """
+    part = coverage[(coverage["zone"] == zone_key) & (coverage["dataset"] == dataset)]
+    if column_prefix is not None:
+        part = part[part["column"].str.startswith(column_prefix)]
+    best_per_year = part.groupby("year")["share"].max().reindex(years, fill_value=0.0)
+    return float(best_per_year.min())
+
+
+def verdicts(coverage: pd.DataFrame, zones: list[Zone], years: list[int],
+             thresholds: dict) -> pd.DataFrame:
+    """Apply the gate rule to each zone on its own.
+
+    Input: coverage rows, the zones, the years that must all be covered, and
+        the thresholds price_min_share and forecast_min_share.
+    Output: one row per zone with the lowest yearly shares and PASS or FAIL.
+    """
+    rows = []
+    for zone in zones:
+        price = worst_share(coverage, zone.key, "prices", years)
+        load = worst_share(coverage, zone.key, "load_forecast", years)
+        wind = worst_share(coverage, zone.key, "wind_solar_forecast", years, column_prefix="Wind")
+        passed = (price >= thresholds["price_min_share"]
+                  and load >= thresholds["forecast_min_share"]
+                  and wind >= thresholds["forecast_min_share"])
+        rows.append({"zone": zone.key, "group": zone.group, "prices_min": price,
+                     "load_fc_min": load, "wind_fc_min": wind,
+                     "gate": "PASS" if passed else "FAIL"})
+    return pd.DataFrame(rows)
+
+
+def column_decisions(coverage: pd.DataFrame, years: list[int], thresholds: dict) -> pd.DataFrame:
+    """Mark each forecast column of each zone as keep or drop.
+
+    Output: one row per zone and forecast column with its lowest yearly share.
+        A column is kept when it reaches forecast_min_share in every year. A
+        year in which the column is absent counts as 0.
+    """
+    forecasts = coverage[(coverage["dataset"] != "prices") & (coverage["column"] != NO_DATA)]
+    rows = []
+    for (zone_key, dataset, column), part in forecasts.groupby(["zone", "dataset", "column"],
+                                                               sort=False):
+        lowest = float(part.set_index("year")["share"].reindex(years, fill_value=0.0).min())
+        keep = lowest >= thresholds["forecast_min_share"]
+        rows.append({"zone": zone_key, "dataset": dataset, "column": column,
+                     "min_share": lowest, "use": "keep" if keep else "drop"})
+    return pd.DataFrame(rows)
+
+
+def to_markdown(table: pd.DataFrame, float_format: str = "{:.2%}") -> str:
+    """Write a frame as a Markdown table.
+
+    Input: a frame, and the format of float cells. The default shows shares
+        as percentages. An empty float cell is shown as "-".
+    """
+    def cell(value: object) -> str:
+        if isinstance(value, float):
+            return "-" if pd.isna(value) else float_format.format(value)
+        return str(value)
+
+    header = "| " + " | ".join(str(name) for name in table.columns) + " |"
+    rule = "|" + "---|" * len(table.columns)
+    body = ["| " + " | ".join(cell(value) for value in row) + " |"
+            for row in table.itertuples(index=False)]
+    return "\n".join([header, rule, *body])
+
+
+def build_report(coverage: pd.DataFrame, verdict: pd.DataFrame, decisions: pd.DataFrame,
+                 start: pd.Timestamp, end: pd.Timestamp, thresholds: dict) -> str:
+    """Write the gate report as Markdown.
+
+    Input: the frames from collect_coverage, verdicts and column_decisions,
+        the data period [start, end) in market time, and the thresholds.
+    Output: the report text.
+    """
+    keys = ["zone", "dataset", "column"]
+    shares = coverage.pivot_table(index=keys, columns="year", values="share",
+                                  sort=False).reset_index()
+    shares.columns = [str(name) for name in shares.columns]
+    resolution = (coverage.groupby(keys, sort=False)["resolution"]
+                  .agg(lambda values: ", ".join(sorted(set(values) - {"-"})) or "-")
+                  .reset_index())
+    prices = coverage[coverage["dataset"] == "prices"]
+    gaps = (prices.pivot_table(index="zone", columns="year", values="days_with_gaps", sort=False)
+            .fillna(0).astype(int).reset_index())
+    gaps.columns = [str(name) for name in gaps.columns]
+    repeats = (coverage.drop_duplicates(["zone", "dataset", "year"])
+               .groupby(["zone", "dataset"], sort=False)["duplicates"].sum().reset_index())
+    last_day = end.date() - timedelta(days=1)
+    price_min = f"{thresholds['price_min_share']:.0%}"
+    forecast_min = f"{thresholds['forecast_min_share']:.0%}"
+
+    return "\n\n".join([
+        "## ENTSO-E coverage gate\n\n"
+        f"Delivery days {start.date()} to {last_day}. Core zones come first. Zones in the group "
+        "\"extra\" are an addition to the scope approved in Milestone 1.\n\n"
+        f"A zone passes when prices reach {price_min} and the load forecast and at least one "
+        f"wind column reach {forecast_min}, in every year. The gate table shows the lowest "
+        "yearly share.",
+        "### Gate result\n\n" + to_markdown(verdict),
+        f"### Forecast columns\n\nA column below {forecast_min} in any year is marked drop "
+        "for that zone.\n\n" + to_markdown(decisions),
+        "### Share of expected time steps present, by year\n\n" + to_markdown(shares),
+        "### Native resolution\n\n" + to_markdown(resolution),
+        "### Delivery days with at least one missing price\n\n" + to_markdown(gaps),
+        "### Repeated timestamps, summed over the years\n\n" + to_markdown(repeats),
+    ]) + "\n"
