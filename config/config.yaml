@@ -3,6 +3,33 @@
 
 seed: 42
 
+# The day-ahead market's clock. It defines delivery days (PROJECT_CONTEXT section 5).
+market:
+  timezone: Europe/Berlin
+  quarter_hour_start: "2025-10-01"   # first delivery day with 15-minute prices
+
+# Folders, relative to the repo root.
+paths:
+  raw: data/raw
+  coverage_report: docs/coverage_gate.md
+  crosscheck_report: docs/price_crosscheck.md
+  # Results for zones whose Energy-Charts data is for private and internal use only.
+  # Under data/, which git ignores. Never commit this file.
+  crosscheck_local_report: data/local/price_crosscheck_restricted.md
+
+# ENTSO-E API client. Without a timeout a stalled request never ends.
+entsoe:
+  timeout_seconds: 120
+
+# Energy-Charts API, used only for the price cross-check (DECISIONS entry 7).
+energy_charts:
+  price_url: https://api.energy-charts.info/v2/price
+  timeout_seconds: 120
+  pause_seconds: 31      # wait before each request. The API allows 2 price requests per minute.
+
+crosscheck:
+  tolerance: 0.01        # EUR/MWh. Larger differences count as mismatches.
+
 data:
   start: "2019-01-01"   # first delivery day. Quoted so YAML keeps it a string.
   end: null             # DATA_END. Frozen on Sun 22 Nov 2026, never moved afterwards.
@@ -15,30 +42,40 @@ splits:
 # Zones are processed in this order: core first, then extra.
 #   key              ENTSO-E area key used by entsoe-py
 #   holiday_country  country code for the `holidays` package
+#   energy_charts    Energy-Charts bidding zone (bzn) for the price cross-check. The API
+#                    states the licence of each answer: CC BY 4.0 for DE-LU, FR and SE4,
+#                    private and internal use only for ES, SE1, SE2 and SE3 (2026-11-20).
 #   group            core  = approved in Milestone 1
 #                    extra = added 19 Nov 2026 (docs/DECISIONS.md, entry 1)
 zones:
   - key: DE_LU
     holiday_country: DE
     group: core
+    energy_charts: DE-LU
   - key: FR
     holiday_country: FR
     group: core
+    energy_charts: FR
   - key: ES
     holiday_country: ES
     group: core
+    energy_charts: ES
   - key: SE_1
     holiday_country: SE
     group: extra
+    energy_charts: SE1
   - key: SE_2
     holiday_country: SE
     group: extra
+    energy_charts: SE2
   - key: SE_3
     holiday_country: SE
     group: extra
+    energy_charts: SE3
   - key: SE_4
     holiday_country: SE
     group: extra
+    energy_charts: SE4
 
 # Day-1 coverage gate (PROJECT_CONTEXT section 3.1). Shares are per year.
 coverage_gate:

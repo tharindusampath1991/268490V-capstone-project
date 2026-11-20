@@ -1,0 +1,45 @@
+"""Tests for the config loader. They use no network and no data files."""
+
+import pandas as pd
+import pytest
+from entsoe.entsoe import QUARTER_MTU_SDAC_GOLIVE
+from entsoe.mappings import lookup_area
+
+from epf.config import load_config, ordered_zones
+
+
+def zone_entry(key: str, group: str) -> dict:
+    """One zone entry shaped like those in config/config.yaml."""
+    return {"key": key, "holiday_country": "XX", "group": group}
+
+
+def test_ordered_zones_puts_core_zones_before_extra_zones():
+    config = {"zones": [zone_entry("A", "extra"), zone_entry("B", "core"),
+                        zone_entry("C", "extra"), zone_entry("D", "core")]}
+
+    keys = [zone.key for zone in ordered_zones(config)]
+
+    assert keys == ["B", "D", "A", "C"]
+
+
+def test_ordered_zones_rejects_an_unknown_group():
+    config = {"zones": [zone_entry("A", "core"), zone_entry("B", "optional")]}
+
+    with pytest.raises(ValueError, match="B.*optional"):
+        ordered_zones(config)
+
+
+def test_project_config_zone_keys_are_entsoe_area_names():
+    zones = ordered_zones(load_config())
+
+    assert zones
+    for zone in zones:
+        assert lookup_area(zone.key).name == zone.key
+
+
+def test_project_config_switch_instant_matches_the_entsoe_client():
+    market = load_config()["market"]
+
+    switch = pd.Timestamp(market["quarter_hour_start"], tz=market["timezone"])
+
+    assert switch == QUARTER_MTU_SDAC_GOLIVE
