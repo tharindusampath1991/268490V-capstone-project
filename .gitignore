@@ -4,7 +4,8 @@
 !.env.example
 
 # Data. Raw downloads and processed tables are rebuilt by scripts.
-data/
+# Anchored to the repo root so src/epf/data/ stays tracked.
+/data/
 
 # Virtual environment
 .venv/
@@ -14,9 +15,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .cache/
+*.egg-info/
 
-# Model weights and checkpoints
-models/
+# Model weights and checkpoints. Anchored to the repo root so src/epf/models/ stays tracked.
+/models/
 *.safetensors
 *.pt
 *.pth
