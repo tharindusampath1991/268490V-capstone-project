@@ -1,0 +1,46 @@
+# Project configuration: zones, dates, seed and gate thresholds.
+# Times are UTC internally. Delivery days are defined in Europe/Berlin.
+
+seed: 42
+
+data:
+  start: "2019-01-01"   # first delivery day. Quoted so YAML keeps it a string.
+  end: null             # DATA_END. Frozen on Sun 22 Nov 2026, never moved afterwards.
+
+# Absolute split dates. Written when DATA_END is frozen (PROJECT_CONTEXT section 4).
+splits:
+  validation_start: null
+  test_start: null
+
+# Zones are processed in this order: core first, then extra.
+#   key              ENTSO-E area key used by entsoe-py
+#   holiday_country  country code for the `holidays` package
+#   group            core  = approved in Milestone 1
+#                    extra = added 19 Nov 2026 (docs/DECISIONS.md, entry 1)
+zones:
+  - key: DE_LU
+    holiday_country: DE
+    group: core
+  - key: FR
+    holiday_country: FR
+    group: core
+  - key: ES
+    holiday_country: ES
+    group: core
+  - key: SE_1
+    holiday_country: SE
+    group: extra
+  - key: SE_2
+    holiday_country: SE
+    group: extra
+  - key: SE_3
+    holiday_country: SE
+    group: extra
+  - key: SE_4
+    holiday_country: SE
+    group: extra
+
+# Day-1 coverage gate (PROJECT_CONTEXT section 3.1). Shares are per year.
+coverage_gate:
+  price_min_share: 0.99      # market time units with a price
+  forecast_min_share: 0.95   # hours with a load forecast / a wind forecast
