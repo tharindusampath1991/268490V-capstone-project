@@ -91,3 +91,17 @@ Result of the full run on 2026-11-20, delivery days 2019-01-01 to 2026-11-19 (`d
 - ES, SE_1, SE_2 and SE_3 were checked in the same run. Their results are in the local file only.
 - An exact match suggests that both sources draw on the same upstream data. The check therefore mainly confirms the zone mapping, the time alignment and the handling of the 15-minute switch in this pipeline. It is not an independent measurement of the prices.
 - The run needed 56 requests at 2 per minute, about 30 minutes in total.
+
+## Coverage gate results
+
+The first full run was on 2026-11-20. It took 4 hours 19 minutes, and the client retried 5 requests on its own. The run was repeated on 2026-11-21 with the rules of DECISIONS entry 19. That run took 28 minutes, because only the 2026 files were downloaded again. The numbers below are from the second run, delivery days 2019-01-01 to 2026-11-20 (`docs/coverage_gate.md`).
+
+- All four Swedish zones pass. In every year their prices are at 100%, the load forecast is at 99.73% or more and the wind forecast at 99.07% or more.
+- The four Swedish zones have the same coverage shares in every year. In the 2024 files the timestamps are the same in all four zones and the values differ: the mean load forecast is 1276, 1822, 9530 and 2510 MW for SE_1 to SE_4.
+- Swedish `Solar` forecast: no data in 2019 and 2020, 8.22% of hours in 2021, and 99.07% or more from 2022. It is marked drop, because the rule needs 95% in every year.
+- FR `Wind Offshore`: no data before 2023, 40.29% in 2023, and 99.99% or more from 2024. Marked drop for the same reason.
+- ES `Wind Onshore`: 99.73% or more from 2019 to 2025, and 93.83% in 2026. In the files of 2026-11-20 the gap was 20 whole days, 480 hours, in 9 blocks: 2 Feb, 13 to 17 Feb, 20 Feb, 16 to 17 Mar, 27 Mar, 30 Mar, 11 Jun, 16 Jun and 6 to 12 Nov. The column is kept by decision (entry 19). The days stay missing in the raw data.
+- ES `Solar` is at 97.22% in 2026.
+- DE_LU prices: on 2026-11-21 at 05:41 market time ENTSO-E had no DE_LU price for delivery day 2026-11-20, while FR had all 96 values. Delivery day 2026-11-19 was complete for both. So the newest DE_LU day can arrive later than in other zones. `DATA_END` must be a day that is complete in all zones.
+- No dataset in any zone has a repeated timestamp.
+- DE_LU forecasts are 15-minute in all years. In the other zones some years are hourly and some are 15-minute.

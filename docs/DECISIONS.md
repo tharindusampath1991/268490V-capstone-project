@@ -116,3 +116,10 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: The cross-check waits 31 seconds before each Energy-Charts request. When the API answers HTTP 429, it waits the seconds of the `Retry-After` header and asks once more.
 - Reason: The API's endpoint catalogue states a limit of 2 price requests per minute and asks clients to honour `Retry-After`. With 6 seconds between requests the sixth request got HTTP 429.
 - Alternative rejected: A shorter fixed pause. Retrying without limit.
+
+## 19. ES stays in every experiment and keeps its wind forecast
+- Date: 2026-11-21, decided by the owner
+- Decision: The coverage gate decides the extra zones only. Core zones are measured and never cut. The ES `Wind Onshore` forecast is kept although its 2026 coverage is below the 95% threshold. It is listed under `coverage_gate.keep_columns` in the config, and the gate report marks it "keep by decision". The missing days stay missing in the raw data, and no value is invented for them. How the models treat those days is fixed in the cleaning step and logged there.
+- Reason: ES is one of the three core zones approved in Milestone 1. In the data downloaded on 2026-11-20, the ES wind forecast covers at least 99.73% of hours in every year from 2019 to 2025. In 2026 it covers 93.81%: 20 whole days are missing, 480 of 7752 hours, in 9 blocks. Dropping the column would take the wind forecast out of RQ2 for a core zone because of 20 days.
+- Alternatives rejected: Applying the drop rule to the ES wind column. Removing ES from M2, which the approved scope does not allow.
+- Risk: The longest missing blocks are 13 to 17 February and 6 to 12 November 2026. The November block lies in the last 90 days of the data, which is the planned test window. The ES results that use the wind forecast must state how these days were handled.

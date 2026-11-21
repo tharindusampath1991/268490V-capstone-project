@@ -131,6 +131,7 @@ Day-1 gate: `python scripts/check_coverage.py` (all 7 zones, 2019 onward, token 
 - Load forecast and wind forecast: present on at least 95% of hours in every year.
 - A forecast column below 95% is dropped for that zone and logged. Expected for Swedish solar.
 - Each Swedish zone is judged on its own. A zone that fails on prices, load forecast or wind forecast leaves M2 and is retried in M3.
+- Core zones are measured by the same rules but never cut. A forecast column below 95% is kept only by a logged decision. So far that is the ES wind forecast (DECISIONS entry 19).
 
 The preprint is a reference and sanity range only. Do not copy its code. Cite it if its numbers are used.
 

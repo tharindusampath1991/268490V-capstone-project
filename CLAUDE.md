@@ -38,6 +38,7 @@ Fill in as they come to exist.
 - Tests: `.venv\Scripts\python -m pytest`
 - Download prices: `.venv\Scripts\python -m epf.data.download_prices` (first full run: about 80 minutes)
 - Price cross-check: `.venv\Scripts\python -m epf.data.crosscheck_prices` (after the price download, about 30 minutes)
+- Coverage gate: `.venv\Scripts\python scripts/check_coverage.py` (first full run: about 4 hours, writes `docs/coverage_gate.md`)
 - Build data:
 - Backtest:
 
