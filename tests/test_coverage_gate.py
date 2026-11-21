@@ -199,3 +199,27 @@ def test_build_report_shows_the_gate_result_and_the_yearly_shares(tmp_path):
     assert "| SE_3 | wind_solar_forecast | Wind Onshore | 100.00% | keep |" in report
     assert "| SE_3 | prices | price | 100.00% |" in report
     assert "2025-01-15 to 2025-01-15" in report
+
+
+def test_verdicts_do_not_gate_a_core_zone():
+    low_wind = {**GOOD, ("wind_solar_forecast", "Wind Onshore"): 0.90}
+    coverage = pd.DataFrame(coverage_rows("ES", low_wind))
+
+    verdict = verdicts(coverage, [Zone("ES", "ES", "core")], [2025], THRESHOLDS)
+
+    assert verdict["wind_fc_min"].tolist() == [0.90]
+    assert verdict["gate"].tolist() == ["not gated (core)"]
+
+
+def test_column_decisions_keep_a_column_that_the_config_lists_as_an_exception():
+    low_wind = {**GOOD, ("wind_solar_forecast", "Wind Onshore"): 0.90}
+    coverage = pd.DataFrame(coverage_rows("ES", low_wind) + coverage_rows("SE_3", low_wind))
+    thresholds = {**THRESHOLDS, "keep_columns": [{"zone": "ES", "column": "Wind Onshore"}]}
+
+    decisions = column_decisions(coverage, [2025], thresholds)
+
+    uses = {(row.zone, row.column): row.use for row in decisions.itertuples()}
+    assert uses[("ES", "Wind Onshore")] == "keep by decision"
+    assert uses[("SE_3", "Wind Onshore")] == "drop"
+    assert uses[("ES", "Solar")] == "drop"
+    assert uses[("ES", "Forecasted Load")] == "keep"

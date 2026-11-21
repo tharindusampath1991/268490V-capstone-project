@@ -81,3 +81,8 @@ zones:
 coverage_gate:
   price_min_share: 0.99      # market time units with a price
   forecast_min_share: 0.95   # hours with a load forecast / a wind forecast
+  # Forecast columns kept although one year is below forecast_min_share.
+  # Each entry needs a decision in docs/DECISIONS.md (entry 19 for ES).
+  keep_columns:
+    - zone: ES
+      column: Wind Onshore

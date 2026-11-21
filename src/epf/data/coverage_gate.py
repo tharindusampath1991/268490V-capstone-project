@@ -7,8 +7,12 @@ For each zone and year the gate measures how much of the expected data exists:
 
 A zone passes when, in every year, prices reach price_min_share and the load
 forecast and at least one wind column reach forecast_min_share. Solar does not
-decide the gate. A forecast column below forecast_min_share in any year is
-marked "drop" for that zone.
+decide the gate. The gate decides the extra zones only. Core zones were
+approved in Milestone 1 and are never cut, so they are measured but not gated.
+
+A forecast column below forecast_min_share in any year is marked "drop" for
+that zone, unless the config lists it under keep_columns. Such a column is
+kept by a logged decision, and its missing days are handled in cleaning.
 """
 
 from datetime import timedelta
@@ -30,6 +34,7 @@ FETCHERS = {
     "wind_solar_forecast": fetch_wind_solar_forecast,
 }
 NO_DATA = "(no data)"
+UNGATED_GROUP = "core"
 YearRange = tuple[int, pd.Timestamp, pd.Timestamp]
 
 
@@ -139,7 +144,8 @@ def verdicts(coverage: pd.DataFrame, zones: list[Zone], years: list[int],
 
     Input: coverage rows, the zones, the years that must all be covered, and
         the thresholds price_min_share and forecast_min_share.
-    Output: one row per zone with the lowest yearly shares and PASS or FAIL.
+    Output: one row per zone with the lowest yearly shares. The gate is PASS
+        or FAIL for an extra zone and "not gated (core)" for a core zone.
     """
     rows = []
     for zone in zones:
@@ -149,27 +155,40 @@ def verdicts(coverage: pd.DataFrame, zones: list[Zone], years: list[int],
         passed = (price >= thresholds["price_min_share"]
                   and load >= thresholds["forecast_min_share"]
                   and wind >= thresholds["forecast_min_share"])
+        if zone.group == UNGATED_GROUP:
+            gate = "not gated (core)"
+        else:
+            gate = "PASS" if passed else "FAIL"
         rows.append({"zone": zone.key, "group": zone.group, "prices_min": price,
-                     "load_fc_min": load, "wind_fc_min": wind,
-                     "gate": "PASS" if passed else "FAIL"})
+                     "load_fc_min": load, "wind_fc_min": wind, "gate": gate})
     return pd.DataFrame(rows)
 
 
 def column_decisions(coverage: pd.DataFrame, years: list[int], thresholds: dict) -> pd.DataFrame:
     """Mark each forecast column of each zone as keep or drop.
 
+    Input: coverage rows, the years that must all be covered, and the
+        thresholds. thresholds may hold keep_columns, a list of zone and
+        column pairs that are kept by a logged decision.
     Output: one row per zone and forecast column with its lowest yearly share.
-        A column is kept when it reaches forecast_min_share in every year. A
-        year in which the column is absent counts as 0.
+        A column is "keep" when it reaches forecast_min_share in every year. A
+        year in which the column is absent counts as 0. A column below the
+        threshold is "keep by decision" when it is listed, otherwise "drop".
     """
+    listed = {(entry["zone"], entry["column"]) for entry in thresholds.get("keep_columns", [])}
     forecasts = coverage[(coverage["dataset"] != "prices") & (coverage["column"] != NO_DATA)]
     rows = []
     for (zone_key, dataset, column), part in forecasts.groupby(["zone", "dataset", "column"],
                                                                sort=False):
         lowest = float(part.set_index("year")["share"].reindex(years, fill_value=0.0).min())
-        keep = lowest >= thresholds["forecast_min_share"]
+        if lowest >= thresholds["forecast_min_share"]:
+            use = "keep"
+        elif (zone_key, column) in listed:
+            use = "keep by decision"
+        else:
+            use = "drop"
         rows.append({"zone": zone_key, "dataset": dataset, "column": column,
-                     "min_share": lowest, "use": "keep" if keep else "drop"})
+                     "min_share": lowest, "use": use})
     return pd.DataFrame(rows)
 
 
@@ -222,10 +241,13 @@ def build_report(coverage: pd.DataFrame, verdict: pd.DataFrame, decisions: pd.Da
         "\"extra\" are an addition to the scope approved in Milestone 1.\n\n"
         f"A zone passes when prices reach {price_min} and the load forecast and at least one "
         f"wind column reach {forecast_min}, in every year. The gate table shows the lowest "
-        "yearly share.",
+        "yearly share. The gate decides the extra zones only. Core zones are never cut, so "
+        "their shares are shown without a verdict.",
         "### Gate result\n\n" + to_markdown(verdict),
         f"### Forecast columns\n\nA column below {forecast_min} in any year is marked drop "
-        "for that zone.\n\n" + to_markdown(decisions),
+        "for that zone. \"keep by decision\" marks a column that is below the threshold and "
+        "is kept by a logged decision (docs/DECISIONS.md). Its missing days are handled in "
+        "the cleaning step.\n\n" + to_markdown(decisions),
         "### Share of expected time steps present, by year\n\n" + to_markdown(shares),
         "### Native resolution\n\n" + to_markdown(resolution),
         "### Delivery days with at least one missing price\n\n" + to_markdown(gaps),
