@@ -131,3 +131,9 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: `check_utc_index` in `src/epf/data/resolution.py` raises an error when the index of a series is not a time index in UTC, is not sorted from old to new, or holds a timestamp more than once. The price split and the covariate alignment call it first. It repairs nothing.
 - Reason: A mean over an hour is wrong when a timestamp appears twice, and a local-time index has a repeated hour on the day the clocks go back. Stopping makes the problem visible. The repair belongs to the cleaning step, where each rule is documented.
 - Alternative rejected: Sorting the index and dropping repeated timestamps inside the function. A bad download would then pass unnoticed.
+
+## 21. The hourly price from 1 Oct 2025 is the mean of the four quarter-hours
+- Date: 2026-11-22
+- Decision: For experiment H, `hourly_prices` keeps the hourly prices before the switch unchanged. From delivery day 2025-10-01 the price of an hour is the plain mean of its four quarter-hour prices. An hour with fewer than four quarter-hour prices stays empty. Experiment Q uses the 15-minute prices from the switch on, unchanged (`quarter_hour_prices`).
+- Reason: PROJECT_CONTEXT §4 sets the mean. It keeps one hourly series across the switch, and it is the price of a flat delivery over the hour. A mean of three values would look like a full hour and hide the gap, so the gap is left for the cleaning step.
+- Alternatives rejected: The first quarter-hour of each hour, which drops three of four prices. A volume-weighted mean, which needs traded volumes that are not downloaded. A mean of the quarter-hours that are present.
