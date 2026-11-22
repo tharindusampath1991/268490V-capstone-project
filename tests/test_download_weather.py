@@ -2,6 +2,7 @@
 
 import pandas as pd
 import pytest
+import requests
 
 from epf.config import Zone
 from epf.data.download_weather import (
@@ -22,6 +23,8 @@ SETTINGS = {
     "variables": ["temperature_2m", "shortwave_radiation"],
     "wind_speed_unit": "ms",
     "pause_seconds": 1.0,
+    "retry_attempts": 3,
+    "retry_wait_seconds": 10.0,
 }
 KASSEL = {"place": "Kassel", "latitude": 51.32, "longitude": 9.50}
 DE_LU = Zone("DE_LU", "DE", "core", weather_point=KASSEL)
@@ -167,6 +170,42 @@ def test_fetch_delivery_day_raises_for_any_other_error_answer():
     with pytest.raises(OpenMeteoError, match="429.*limit exceeded"):
         fetch_delivery_day(get, SETTINGS, KASSEL,
                            market_time("2025-01-15"), market_time("2025-01-16"))
+
+
+class DroppingApi(FakeApi):
+    """Like FakeApi, but the first `drops` calls end in a dropped connection."""
+
+    def __init__(self, drops: int) -> None:
+        super().__init__()
+        self.drops = drops
+
+    def __call__(self, url: str, params: dict) -> FakeResponse:
+        if len(self.calls) < self.drops:
+            self.calls.append((url, params))
+            raise requests.ConnectionError("Connection aborted.")
+        return super().__call__(url, params)
+
+
+def test_fetch_delivery_day_asks_again_after_a_dropped_connection():
+    api = DroppingApi(drops=2)
+    waits = []
+
+    data = fetch_delivery_day(api, SETTINGS, KASSEL, market_time("2025-01-15"),
+                              market_time("2025-01-16"), sleep=waits.append)
+
+    assert len(api.calls) == 3
+    assert waits == [10.0, 10.0]
+    assert len(data) == 24
+
+
+def test_fetch_delivery_day_gives_up_after_the_configured_attempts():
+    api = DroppingApi(drops=3)
+
+    with pytest.raises(requests.ConnectionError):
+        fetch_delivery_day(api, SETTINGS, KASSEL, market_time("2025-01-15"),
+                           market_time("2025-01-16"), sleep=no_sleep)
+
+    assert len(api.calls) == 3
 
 
 def test_fetch_weather_asks_one_run_per_delivery_day_and_pauses_before_each():

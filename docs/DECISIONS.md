@@ -176,3 +176,9 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: One point per zone is one config entry and one rule for all seven zones. Paris and Madrid are the largest demand centres. Kassel is near the centre of Germany, between the wind in the north and the solar in the south. The four Swedish price areas are named after these four cities.
 - Alternative rejected: Several points per zone with an average. It fits a large zone better, but it needs more requests and an averaging rule to defend.
 - Limit: One point cannot stand for the weather of a whole zone. This is weakest for DE_LU.
+
+## 28. A dropped Open-Meteo connection is asked again, up to three attempts
+- Date: 2026-11-22
+- Decision: When a weather request ends in a connection error or a timeout, the downloader waits 10 seconds and asks again, at most 3 attempts per request. An error answer from the API is never retried. Both numbers are in the config.
+- Reason: The first full run stopped after one minute with a connection error. A test of 49 requests one second apart had one connection reset by the remote host, and the same request then answered normally four times. The download needs about 6,900 requests, and a zone and year is saved only when all its requests succeed.
+- Alternatives rejected: No retry, which loses up to a year of requests on each reset. Retrying error answers too, which would hide a refused request or a rate limit.

@@ -46,6 +46,8 @@ open_meteo:
   wind_speed_unit: ms
   timeout_seconds: 60
   pause_seconds: 1.0        # wait before each request. The free limit is 5000 calls per hour.
+  retry_attempts: 3         # attempts per request when the connection drops or times out
+  retry_wait_seconds: 10    # wait between those attempts
 
 data:
   start: "2019-01-01"   # first delivery day. Quoted so YAML keeps it a string.

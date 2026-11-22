@@ -64,17 +64,20 @@ def run_time(day_start: pd.Timestamp, run_hour_utc: int) -> pd.Timestamp:
 
 
 def fetch_delivery_day(get: Callable, settings: dict, point: dict,
-                       day_start: pd.Timestamp, day_end: pd.Timestamp) -> pd.DataFrame:
+                       day_start: pd.Timestamp, day_end: pd.Timestamp,
+                       sleep: Callable[[float], None] = time.sleep) -> pd.DataFrame:
     """Download the weather forecast for the hours of one delivery day.
 
     Input: get is requests.get or a function with the same call. settings is
         the open_meteo part of the config. point holds latitude and longitude.
         day_start and day_end are 00:00 of day D and of day D+1 in market time.
+        sleep is replaced in tests.
     Output: one row per hour of [day_start, day_end) with a UTC index, one
         column per weather variable, and the column "run" with the
         initialisation time of the run in UTC. No rows when the run is not in
         the archive.
-    Raises OpenMeteoError for every other error answer.
+    Raises OpenMeteoError for every other error answer. A dropped connection
+        or a timeout is asked again, up to settings["retry_attempts"] times.
     """
     run = run_time(day_start, settings["run_hour_utc"])
     params = {
@@ -86,7 +89,7 @@ def fetch_delivery_day(get: Callable, settings: dict, point: dict,
         "forecast_hours": settings["forecast_hours"],
         "wind_speed_unit": settings["wind_speed_unit"],
     }
-    response = get(settings["url"], params=params)
+    response = _get_with_retries(get, settings, params, sleep)
     if response.status_code != 200:
         reason = _error_reason(response)
         if response.status_code == 400 and RUN_NOT_AVAILABLE in reason:
@@ -111,7 +114,7 @@ def fetch_weather(get: Callable, settings: dict, point: dict, start: pd.Timestam
     frames = []
     for day_start, day_end in delivery_days(start, end):
         sleep(settings["pause_seconds"])
-        data = fetch_delivery_day(get, settings, point, day_start, day_end)
+        data = fetch_delivery_day(get, settings, point, day_start, day_end, sleep=sleep)
         if not data.empty:
             frames.append(data)
     return pd.concat(frames) if frames else _no_rows()
@@ -173,6 +176,24 @@ def main() -> None:
         sys.exit(f"Open-Meteo request failed: {type(error).__name__}. "
                  "Finished years are saved, so run the command again to resume.")
     print(summary.to_string(index=False))
+
+
+def _get_with_retries(get: Callable, settings: dict, params: dict,
+                      sleep: Callable[[float], None]) -> requests.Response:
+    """Send one request and ask again after a dropped connection or a timeout.
+
+    Output: the first answer that arrives. An error answer is returned, not
+        retried. After settings["retry_attempts"] failed attempts the last
+        error is raised. The wait between attempts is
+        settings["retry_wait_seconds"].
+    """
+    for attempt in range(1, settings["retry_attempts"] + 1):
+        try:
+            return get(settings["url"], params=params)
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt == settings["retry_attempts"]:
+                raise
+            sleep(settings["retry_wait_seconds"])
 
 
 def _error_reason(response: requests.Response) -> str:
