@@ -143,6 +143,37 @@ The first full run was on 2026-11-20. It took 4 hours 19 minutes, and the client
 - No dataset in any zone has a repeated timestamp.
 - DE_LU forecasts are 15-minute in all years. In the other zones some years are hourly and some are 15-minute.
 
+## Weather forecasts
+
+Read from the Open-Meteo docs on 2026-11-22 (Single Runs API, ECMWF API, pricing and licence pages) and checked against live answers. Code: `src/epf/data/download_weather.py` (DECISIONS entries 25 to 28).
+
+What the docs state:
+
+- The Single Runs API returns one model run per request. `run=` is the initialisation time in UTC, for example `2026-11-15T00:00`. It is not the time the forecast was published.
+- A 00 UTC run of a global model is "generally accessible from approximately 04–06 UTC onwards". This project did not measure it.
+- ECMWF IFS HRES at 9 km is archived from March 14, 2024, described as "IFS Cycle 49R1 hindcasts". All other models are archived from 2 April 2026. The model has hourly steps up to 90 hours.
+- `shortwave_radiation` is the mean over the hour before the timestamp. Temperature and wind speed are values at the timestamp.
+- Free use is limited to 600 calls per minute, 5000 per hour and 10000 per day. The data licence is CC BY 4.0, with the credit "Weather data by Open-Meteo.com".
+
+What the live answers showed:
+
+- Times are in UTC without an offset, and the answer says so (`utc_offset_seconds` 0). The first step is the run time. `forecast_hours=48` returned 48 hourly steps.
+- Units in the answer: °C, m/s (asked with `wind_speed_unit=ms`) and W/m². The radiation of the first step of a run is empty.
+- The run of 2024-03-14 00:00 UTC was answered. The run of 2024-03-13 was refused with HTTP 400, "The requested model run is not available".
+- The request for Kassel (51.32, 9.50) was answered from the grid cell at 51.35325, 9.422382, elevation 158 m.
+
+What is stored: for delivery day D, the hours of D from the 00:00 UTC run of D-1, with the run time in the column `run`. Files are `data/raw/open_meteo/weather_forecast/{ZONE}_{YEAR}.parquet`.
+
+Full download with `python -m epf.data.download_weather` on 2026-11-22, from 10:58 to 15:29 market time, delivery days 2024-03-15 to 2026-11-21:
+
+- The first attempt stopped after one minute with a connection error. A test of 49 requests had one connection reset by the remote host, and the same request then worked. The downloader now asks again after a dropped connection (DECISIONS entry 28). It does not count how often that happened.
+- 21 files, one per zone and year, 164976 rows. Each zone has 982 runs and 23568 rows. That is 6874 requests answered with data, one second apart. The run took 4 hours 31 minutes.
+- Every run is the 00:00 UTC run. The hours of a delivery day start 22 to 46 hours after their run.
+- Every hour of every delivery day has a row in every zone. No repeated timestamp.
+- `temperature_2m` and `wind_speed_10m` are empty for the 24 hours of delivery day 2026-06-24, from the run of 2026-06-23, in all seven zones. `wind_speed_100m` and `shortwave_radiation` have values on that day. The empty values stay empty.
+- No other value is missing.
+- While `data.end` is not set, a run on a later day downloads the 2026 file of each zone again, which was 325 requests per zone on 2026-11-22. One full download uses about 6900 of the 10000 calls per day.
+
 ## Time handling
 
 Built on 2026-11-22 in `src/epf/data/resolution.py` (DECISIONS entries 20 to 22). The functions work in UTC, where every hour has four quarter-hours and a clock-change day is 23 or 25 hours long. They fill no gap and write no file.

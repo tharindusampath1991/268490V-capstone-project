@@ -39,6 +39,7 @@ Fill in as they come to exist.
 - Download prices: `.venv\Scripts\python -m epf.data.download_prices` (first full run: about 80 minutes)
 - Download forecasts: `.venv\Scripts\python -m epf.data.download_forecasts` (load forecast and wind and solar forecast. Current year only: about 20 minutes. Run one ENTSO-E download at a time, they share one cache manifest)
 - Download actual load: `.venv\Scripts\python -m epf.data.download_actual_load` (first full run: about 75 minutes)
+- Download weather: `.venv\Scripts\python -m epf.data.download_weather` (first full run: about 4.5 hours and about 6900 of the 10000 Open-Meteo calls allowed per day)
 - Price cross-check: `.venv\Scripts\python -m epf.data.crosscheck_prices` (after the price download, about 30 minutes)
 - Coverage gate: `.venv\Scripts\python scripts/check_coverage.py` (first full run: about 4 hours, writes `docs/coverage_gate.md`)
 - Build data:
