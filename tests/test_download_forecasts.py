@@ -3,11 +3,17 @@
 import pandas as pd
 from entsoe.exceptions import NoMatchingDataError
 
+from epf.config import Zone
 from epf.data.download_forecasts import (
+    download_datasets,
     fetch_load_forecast,
     fetch_wind_solar_forecast,
     hourly_coverage,
 )
+
+FETCHERS = {"load_forecast": fetch_load_forecast, "wind_solar_forecast": fetch_wind_solar_forecast}
+DE_LU = Zone("DE_LU", "DE", "core")
+SE_1 = Zone("SE_1", "SE", "extra")
 
 MARKET_TZ = "Europe/Berlin"
 DAY_START = pd.Timestamp("2025-01-15", tz=MARKET_TZ)
@@ -116,3 +122,72 @@ def test_hourly_coverage_counts_repeated_timestamps():
     rows = hourly_coverage(data, DAY_START, DAY_END)
 
     assert [(row["duplicates"], row["share"]) for row in rows] == [(1, 1.0)]
+
+
+def test_download_datasets_reports_each_zone_dataset_and_year_in_the_given_order(tmp_path):
+    client = FakeClient(hourly_frame("2025-01-15", "2025-01-16", ["Forecasted Load"]))
+
+    summary = download_datasets(client, FETCHERS, [DE_LU, SE_1], [(2025, DAY_START, DAY_END)],
+                                tmp_path)
+
+    assert summary["zone"].tolist() == ["DE_LU", "DE_LU", "SE_1", "SE_1"]
+    assert summary["dataset"].tolist() == ["load_forecast", "wind_solar_forecast"] * 2
+    assert summary["year"].tolist() == [2025] * 4
+
+
+def test_download_datasets_reports_rows_resolution_missing_hours_and_repeats(tmp_path):
+    client = FakeClient(hourly_frame("2025-01-15", "2025-01-16", ["Forecasted Load"]))
+
+    summary = download_datasets(client, {"load_forecast": fetch_load_forecast}, [DE_LU],
+                                [(2025, DAY_START, DAY_END)], tmp_path)
+
+    assert summary.to_dict("records") == [{
+        "zone": "DE_LU", "dataset": "load_forecast", "year": 2025, "column": "Forecasted Load",
+        "rows": 24, "resolution": "60min", "expected_hours": 24, "missing_hours": 0, "repeated": 0,
+    }]
+
+
+def test_download_datasets_counts_missing_hours_per_column(tmp_path):
+    frame = hourly_frame("2025-01-15", "2025-01-16", ["Solar", "Wind Onshore"])
+    frame.iloc[:6, 0] = float("nan")
+
+    summary = download_datasets(FakeClient(frame), {"wind_solar_forecast": fetch_wind_solar_forecast},
+                                [DE_LU], [(2025, DAY_START, DAY_END)], tmp_path)
+
+    assert dict(zip(summary["column"], summary["missing_hours"])) == {"Solar": 6, "Wind Onshore": 0}
+    assert summary["rows"].tolist() == [24, 24]
+
+
+def test_download_datasets_reports_a_year_without_data_as_fully_missing(tmp_path):
+    client = FakeClient(hourly_frame("2024-01-01", "2024-01-02", ["Forecasted Load"]))
+
+    summary = download_datasets(client, {"load_forecast": fetch_load_forecast}, [DE_LU],
+                                [(2025, DAY_START, DAY_END)], tmp_path)
+
+    assert summary["column"].tolist() == ["(no data)"]
+    assert summary["rows"].tolist() == [0]
+    assert summary["missing_hours"].tolist() == [24]
+
+
+def test_download_datasets_saves_the_values_unchanged(tmp_path):
+    frame = hourly_frame("2025-01-15", "2025-01-16", ["Forecasted Load"])
+    frame.iloc[3, 0] = float("nan")
+    client = FakeClient(frame)
+
+    download_datasets(client, {"load_forecast": fetch_load_forecast}, [DE_LU],
+                      [(2025, DAY_START, DAY_END)], tmp_path)
+
+    saved = pd.read_parquet(tmp_path / "load_forecast" / "DE_LU_2025.parquet")
+    fetched = fetch_load_forecast(client, "DE_LU", DAY_START, DAY_END)
+    pd.testing.assert_frame_equal(saved, fetched, check_freq=False)
+    assert pd.isna(saved.iloc[3, 0])
+
+
+def test_download_datasets_uses_the_saved_files_on_a_second_run(tmp_path):
+    client = FakeClient(hourly_frame("2025-01-15", "2025-01-16", ["Forecasted Load"]))
+    download_datasets(client, FETCHERS, [DE_LU], [(2025, DAY_START, DAY_END)], tmp_path)
+
+    summary = download_datasets(client, FETCHERS, [DE_LU], [(2025, DAY_START, DAY_END)], tmp_path)
+
+    assert len(client.calls) == 2
+    assert summary["rows"].tolist() == [24, 24]
