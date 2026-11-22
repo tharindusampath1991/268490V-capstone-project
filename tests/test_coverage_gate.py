@@ -1,15 +1,12 @@
 """Tests for the coverage gate. They use synthetic frames, a fake client and no network."""
 
 import pandas as pd
-import pytest
 
 from epf.config import Zone
 from epf.data.coverage_gate import (
     build_report,
     collect_coverage,
     column_decisions,
-    hourly_coverage,
-    native_resolution,
     verdicts,
 )
 
@@ -17,8 +14,6 @@ MARKET_TZ = "Europe/Berlin"
 SWITCH = pd.Timestamp("2025-10-01", tz=MARKET_TZ)
 DAY_START = pd.Timestamp("2025-01-15", tz=MARKET_TZ)
 DAY_END = pd.Timestamp("2025-01-16", tz=MARKET_TZ)
-# The 24 hours of delivery day 15 Jan 2025 in market time (UTC+1 in winter).
-FULL_DAY = pd.date_range("2025-01-14 23:00", periods=24, freq="h", tz="UTC")
 THRESHOLDS = {"price_min_share": 0.99, "forecast_min_share": 0.95}
 SE_3 = Zone("SE_3", "SE", "extra")
 # Yearly shares of a zone that passes the gate. Solar is low on purpose.
@@ -55,59 +50,6 @@ def coverage_rows(zone_key: str, shares: dict, year: int = 2025) -> list[dict]:
     """Coverage rows of one zone and year from {(dataset, column): share}."""
     return [{"zone": zone_key, "dataset": dataset, "column": column, "year": year, "share": share}
             for (dataset, column), share in shares.items()]
-
-
-@pytest.mark.parametrize("freq, expected", [("h", "60min"), ("15min", "15min")])
-def test_native_resolution_names_the_most_common_step(freq, expected):
-    index = pd.date_range("2025-01-01", periods=8, freq=freq, tz="UTC")
-
-    assert native_resolution(index) == expected
-
-
-def test_native_resolution_is_not_changed_by_one_gap():
-    index = pd.date_range("2025-01-01", periods=8, freq="h", tz="UTC").delete(3)
-
-    assert native_resolution(index) == "60min"
-
-
-def test_native_resolution_is_a_dash_for_fewer_than_two_timestamps():
-    assert native_resolution(FULL_DAY[:1]) == "-"
-
-
-def test_hourly_coverage_gives_the_share_of_hours_with_a_value_per_column():
-    data = pd.DataFrame({"Solar": 1.0, "Wind Onshore": 1.0}, index=FULL_DAY)
-    data.loc[FULL_DAY[:6], "Solar"] = float("nan")
-
-    rows = hourly_coverage(data, DAY_START, DAY_END)
-
-    assert {row["column"]: row["share"] for row in rows} == {"Solar": 0.75, "Wind Onshore": 1.0}
-    assert {row["column"]: row["present"] for row in rows} == {"Solar": 18, "Wind Onshore": 24}
-
-
-def test_hourly_coverage_counts_an_hour_as_present_when_it_holds_any_value():
-    quarter_past = pd.date_range("2025-01-14 23:15", periods=24, freq="h", tz="UTC")
-    data = pd.DataFrame({"Forecasted Load": 1.0}, index=quarter_past)
-
-    rows = hourly_coverage(data, DAY_START, DAY_END)
-
-    assert [row["share"] for row in rows] == [1.0]
-
-
-def test_hourly_coverage_reports_no_data_as_one_row_with_share_zero():
-    empty = pd.DataFrame(index=pd.DatetimeIndex([], tz="UTC"))
-
-    rows = hourly_coverage(empty, DAY_START, DAY_END)
-
-    assert [(row["column"], row["expected"], row["present"], row["share"]) for row in rows] == [
-        ("(no data)", 24, 0, 0.0)]
-
-
-def test_hourly_coverage_counts_repeated_timestamps():
-    data = pd.DataFrame({"Forecasted Load": 1.0}, index=FULL_DAY.append(FULL_DAY[:1]))
-
-    rows = hourly_coverage(data, DAY_START, DAY_END)
-
-    assert [(row["duplicates"], row["share"]) for row in rows] == [(1, 1.0)]
 
 
 def test_verdicts_pass_a_zone_that_meets_all_three_thresholds():

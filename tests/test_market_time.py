@@ -7,6 +7,7 @@ from epf.data.market_time import (
     data_range,
     expected_price_index,
     hourly_index,
+    native_resolution,
     quarter_hour_index,
     year_ranges,
 )
@@ -109,3 +110,22 @@ def test_quarter_hour_index_starts_at_midnight_in_market_time():
     assert index[0] == pd.Timestamp("2026-10-24 22:00", tz="UTC")
     assert index[1] == pd.Timestamp("2026-10-24 22:15", tz="UTC")
     assert index[-1] == pd.Timestamp("2026-10-25 22:45", tz="UTC")
+
+
+@pytest.mark.parametrize("freq, expected", [("h", "60min"), ("15min", "15min")])
+def test_native_resolution_names_the_most_common_step(freq, expected):
+    index = pd.date_range("2025-01-01", periods=8, freq=freq, tz="UTC")
+
+    assert native_resolution(index) == expected
+
+
+def test_native_resolution_is_not_changed_by_one_gap():
+    index = pd.date_range("2025-01-01", periods=8, freq="h", tz="UTC").delete(3)
+
+    assert native_resolution(index) == "60min"
+
+
+def test_native_resolution_is_a_dash_for_fewer_than_two_timestamps():
+    index = pd.date_range("2025-01-01", periods=1, freq="h", tz="UTC")
+
+    assert native_resolution(index) == "-"

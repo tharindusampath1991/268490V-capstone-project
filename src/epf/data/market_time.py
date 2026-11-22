@@ -73,6 +73,17 @@ def quarter_hour_index(start: pd.Timestamp, end: pd.Timestamp) -> pd.DatetimeInd
     return _steps(start.tz_convert("UTC"), end.tz_convert("UTC"), "15min")
 
 
+def native_resolution(index: pd.DatetimeIndex) -> str:
+    """Return the most common step between timestamps, for example "15min".
+
+    Output: "-" when the index has fewer than two timestamps.
+    """
+    if len(index) < 2:
+        return "-"
+    step = index.to_series().diff().mode().iloc[0]
+    return f"{int(step.total_seconds() // 60)}min"
+
+
 def _steps(start: pd.Timestamp, end: pd.Timestamp, freq: str) -> pd.DatetimeIndex:
     """Return the time steps in [start, end). Empty when start equals end."""
     index = pd.date_range(start, end, freq=freq)

@@ -23,30 +23,23 @@ import pandas as pd
 from entsoe import EntsoePandasClient
 
 from epf.config import Zone
-from epf.data.download_forecasts import fetch_load_forecast, fetch_wind_solar_forecast
+from epf.data.download_forecasts import (
+    NO_DATA,
+    fetch_load_forecast,
+    fetch_wind_solar_forecast,
+    hourly_coverage,
+)
 from epf.data.download_prices import check_prices, fetch_prices
 from epf.data.entsoe_cache import cached_fetch
-from epf.data.market_time import hourly_index
+from epf.data.market_time import native_resolution
 
 FETCHERS = {
     "prices": fetch_prices,
     "load_forecast": fetch_load_forecast,
     "wind_solar_forecast": fetch_wind_solar_forecast,
 }
-NO_DATA = "(no data)"
 UNGATED_GROUP = "core"
 YearRange = tuple[int, pd.Timestamp, pd.Timestamp]
-
-
-def native_resolution(index: pd.DatetimeIndex) -> str:
-    """Return the most common step between timestamps, for example "15min".
-
-    Output: "-" when the index has fewer than two timestamps.
-    """
-    if len(index) < 2:
-        return "-"
-    step = index.to_series().diff().mode().iloc[0]
-    return f"{int(step.total_seconds() // 60)}min"
 
 
 def price_coverage(data: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp,
@@ -69,33 +62,6 @@ def price_coverage(data: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp,
         "unexpected": counts["unexpected"],
         "duplicates": counts["duplicates"],
     }
-
-
-def hourly_coverage(data: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> list[dict]:
-    """Return one coverage row per column: the share of hours in [start, end) with a value.
-
-    Input: a forecast frame with a UTC index, start and end in market time.
-    Output: an hour counts as present when it holds at least one value, so
-        hourly and 15-minute series are measured the same way. An empty frame
-        gives one row named "(no data)" with share 0.
-    """
-    expected = hourly_index(start, end)
-    shared = {
-        "resolution": native_resolution(data.index),
-        "expected": len(expected),
-        "days_with_gaps": None,
-        "unexpected": None,
-        "duplicates": int(data.index.duplicated().sum()),
-    }
-    if data.empty:
-        return [{"column": NO_DATA, "present": 0, "share": 0.0, **shared}]
-    hourly = data.resample("h").mean().reindex(expected)
-    rows = []
-    for column in hourly.columns:
-        present = int(hourly[column].notna().sum())
-        rows.append({"column": str(column), "present": present,
-                     "share": present / len(expected), **shared})
-    return rows
 
 
 def collect_coverage(client: EntsoePandasClient, zones: list[Zone], ranges: list[YearRange],

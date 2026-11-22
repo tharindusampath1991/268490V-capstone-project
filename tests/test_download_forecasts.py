@@ -3,11 +3,17 @@
 import pandas as pd
 from entsoe.exceptions import NoMatchingDataError
 
-from epf.data.download_forecasts import fetch_load_forecast, fetch_wind_solar_forecast
+from epf.data.download_forecasts import (
+    fetch_load_forecast,
+    fetch_wind_solar_forecast,
+    hourly_coverage,
+)
 
 MARKET_TZ = "Europe/Berlin"
 DAY_START = pd.Timestamp("2025-01-15", tz=MARKET_TZ)
 DAY_END = pd.Timestamp("2025-01-16", tz=MARKET_TZ)
+# The 24 hours of delivery day 15 Jan 2025 in market time (UTC+1 in winter).
+FULL_DAY = pd.date_range("2025-01-14 23:00", periods=24, freq="h", tz="UTC")
 
 
 class FakeClient:
@@ -74,3 +80,39 @@ def test_fetch_load_forecast_returns_an_empty_frame_when_entsoe_has_no_data():
 
     assert data.empty
     assert str(data.index.tz) == "UTC"
+
+
+def test_hourly_coverage_gives_the_share_of_hours_with_a_value_per_column():
+    data = pd.DataFrame({"Solar": 1.0, "Wind Onshore": 1.0}, index=FULL_DAY)
+    data.loc[FULL_DAY[:6], "Solar"] = float("nan")
+
+    rows = hourly_coverage(data, DAY_START, DAY_END)
+
+    assert {row["column"]: row["share"] for row in rows} == {"Solar": 0.75, "Wind Onshore": 1.0}
+    assert {row["column"]: row["present"] for row in rows} == {"Solar": 18, "Wind Onshore": 24}
+
+
+def test_hourly_coverage_counts_an_hour_as_present_when_it_holds_any_value():
+    quarter_past = pd.date_range("2025-01-14 23:15", periods=24, freq="h", tz="UTC")
+    data = pd.DataFrame({"Forecasted Load": 1.0}, index=quarter_past)
+
+    rows = hourly_coverage(data, DAY_START, DAY_END)
+
+    assert [row["share"] for row in rows] == [1.0]
+
+
+def test_hourly_coverage_reports_no_data_as_one_row_with_share_zero():
+    empty = pd.DataFrame(index=pd.DatetimeIndex([], tz="UTC"))
+
+    rows = hourly_coverage(empty, DAY_START, DAY_END)
+
+    assert [(row["column"], row["expected"], row["present"], row["share"]) for row in rows] == [
+        ("(no data)", 24, 0, 0.0)]
+
+
+def test_hourly_coverage_counts_repeated_timestamps():
+    data = pd.DataFrame({"Forecasted Load": 1.0}, index=FULL_DAY.append(FULL_DAY[:1]))
+
+    rows = hourly_coverage(data, DAY_START, DAY_END)
+
+    assert [(row["duplicates"], row["share"]) for row in rows] == [(1, 1.0)]
