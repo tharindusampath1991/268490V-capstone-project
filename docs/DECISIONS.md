@@ -149,3 +149,9 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: `hourly_coverage` moves from `coverage_gate.py` to `download_forecasts.py`, and `native_resolution` moves to `market_time.py`. The gate module imports both. Nothing in their behaviour changes.
 - Reason: The forecast downloader needs the same counts for its own printed summary. This is the layout the prices already have: `check_prices` is in `download_prices.py` and the gate imports it.
 - Alternative rejected: Importing the check from the gate module. The gate module already imports the fetch functions from the downloader, so the two modules would import each other.
+
+## 24. Actual load is its own raw dataset
+- Date: 2026-11-22
+- Decision: The actual total load is downloaded with `EntsoePandasClient.query_load` and saved as the dataset `actual_load`, one file per zone and year, through the same cache and the same printed counts as the forecasts. The code is in `src/epf/data/download_actual_load.py`.
+- Reason: The load forecast files are already in the cache and keep their name and content. Actual load also follows a different rule from the forecasts: a model input may use it through D-2 only (PROJECT_CONTEXT §5). A separate dataset keeps that visible.
+- Alternative rejected: `query_load_and_forecast`, which returns the forecast and the actual load joined in one frame. It would download the load forecast a second time and put a leakage-sensitive column next to a safe one.

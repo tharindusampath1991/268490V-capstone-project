@@ -42,7 +42,7 @@ def fetch_load_forecast(client: EntsoePandasClient, zone_key: str,
     Output: the client's columns with a UTC index. The end timestamp is left
         out. The frame is empty when ENTSO-E has no data.
     """
-    return _fetch_frame(client.query_load_forecast, zone_key, start, end)
+    return fetch_frame(client.query_load_forecast, zone_key, start, end)
 
 
 def fetch_wind_solar_forecast(client: EntsoePandasClient, zone_key: str,
@@ -54,7 +54,7 @@ def fetch_wind_solar_forecast(client: EntsoePandasClient, zone_key: str,
     Output: one column per production type with a UTC index. The end timestamp
         is left out. The frame is empty when ENTSO-E has no data.
     """
-    return _fetch_frame(client.query_wind_and_solar_forecast, zone_key, start, end)
+    return fetch_frame(client.query_wind_and_solar_forecast, zone_key, start, end)
 
 
 def hourly_coverage(data: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> list[dict]:
@@ -150,9 +150,15 @@ def main() -> None:
                    "wind_solar_forecast": fetch_wind_solar_forecast})
 
 
-def _fetch_frame(query: Callable[..., pd.DataFrame], zone_key: str,
-                 start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    """Run one entsoe-py frame query and return it in UTC, cut to [start, end)."""
+def fetch_frame(query: Callable[..., pd.DataFrame], zone_key: str,
+                start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    """Run one entsoe-py frame query and return it in UTC, cut to [start, end).
+
+    Input: a client method that takes a zone key, start and end and returns a
+        frame. start and end are time zone aware.
+    Output: the client's columns with a UTC index. The end timestamp is left
+        out. The frame is empty when ENTSO-E has no data.
+    """
     try:
         data = call_entsoe(query, zone_key, start=start, end=end)
     except EntsoeNoDataError:
