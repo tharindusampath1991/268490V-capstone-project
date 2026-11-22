@@ -80,6 +80,17 @@ Live test on 2026-11-20, delivery days 2026-11-01 to 2026-11-03, 4 requests, all
 - SE_3 wind and solar forecast: columns `Solar` and `Wind Onshore`, 15-minute values. So a Swedish solar forecast exists for these days. Its coverage over all years is a result of the coverage gate.
 - No repeated timestamp in these four answers.
 
+The command `python -m epf.data.download_forecasts` downloads both datasets for all zones through the cache, core zones first. It prints one line per zone, dataset, year and column: rows in the file, the most common step, expected hours, missing hours and repeated timestamps. It changes no value. The check behind it is `hourly_coverage`, the same one the coverage gate uses.
+
+First run on 2026-11-22 at 10:23 market time, delivery days 2019-01-01 to 2026-11-21:
+
+- 112 files, 56 per dataset. The 14 files of 2026 were downloaded again, which is 154 monthly requests by the client's month split. The other 98 were read from the cache. The run took 22 minutes.
+- No repeated timestamp in any file.
+- The load forecast has no missing hour in 2026 in any zone, up to 2026-11-21.
+- Missing hours in the 2026 wind and solar files: ES 480 for `Wind Onshore` and 216 for `Solar`, FR 25 for `Solar` and `Wind Onshore` and 1 for `Wind Offshore`, each Swedish zone 72 for `Wind Onshore` and `Solar`. The 480 ES hours are the 20 days of DECISIONS entry 19.
+- Unit, read from the raw answers for DE_LU and FR on delivery day 2026-11-10: ENTSO-E states `MAW` (megawatt) for the actual load, the load forecast and the wind and solar forecast.
+- Most common step per file. DE_LU: 15-minute in all years. FR load forecast: hourly to 2024, 15-minute from 2025. FR wind and solar: hourly to 2025, 15-minute in 2026. ES: hourly to 2021, 15-minute from 2022. SE_1 to SE_4: hourly to 2025, 15-minute in 2026. A file that changes resolution inside the year shows the more common step, for example ES 2022 and the Swedish zones in 2025.
+
 ## Energy-Charts price cross-check
 
 Checked against the live API and its endpoint catalogue (`https://api.energy-charts.info/openapi.json`) on 2026-11-20. Code: `src/epf/data/download_energy_charts.py` and `src/epf/data/crosscheck_prices.py`.
@@ -114,3 +125,21 @@ The first full run was on 2026-11-20. It took 4 hours 19 minutes, and the client
 - DE_LU prices: on 2026-11-21 at 05:41 market time ENTSO-E had no DE_LU price for delivery day 2026-11-20, while FR had all 96 values. Delivery day 2026-11-19 was complete for both. So the newest DE_LU day can arrive later than in other zones. `DATA_END` must be a day that is complete in all zones.
 - No dataset in any zone has a repeated timestamp.
 - DE_LU forecasts are 15-minute in all years. In the other zones some years are hourly and some are 15-minute.
+
+## Time handling
+
+Built on 2026-11-22 in `src/epf/data/resolution.py` (DECISIONS entries 20 to 22). The functions work in UTC, where every hour has four quarter-hours and a clock-change day is 23 or 25 hours long. They fill no gap and write no file.
+
+- `check_utc_index` refuses an index that is not a time index in UTC, is not sorted or repeats a timestamp. The functions below call it first. The raw price and forecast files of 2026-11-22 pass it in all seven zones.
+- Experiment H uses `hourly_prices`: the hourly prices before 2025-10-01 unchanged, then the mean of the four quarter-hour prices of each hour. An hour with fewer than four prices stays empty.
+- Experiment Q uses `quarter_hour_prices`: the 15-minute prices from 2025-10-01, unchanged.
+- Covariates to the hourly grid, `align_to_hours`, per column and hour: one value at minute 0 is kept, four quarter-hour values give their mean, anything else stays empty.
+- Covariates to the 15-minute grid, `align_to_quarter_hours`, per column and hour: one value at minute 0 is repeated on the four quarter-hours, every other value stays at its own time. Nothing is interpolated.
+
+Run over the raw files of 2026-11-22, delivery days 2019-01-01 to 2026-11-21. The period has 69168 hours, and 40036 quarter-hours from 2025-10-01.
+
+- Prices: ES and SE_1 to SE_4 give 69168 hourly values and 40036 15-minute values. DE_LU gives 69120 and 39844, FR gives 69144 and 39940. The difference is the newest days that ENTSO-E had not published (see "Raw price format"). No hour came out empty.
+- DE_LU on single days, as raw, hourly and 15-minute values: 2025-03-30 has 23, 23 and 0. 2025-09-30 has 24, 24 and 0. 2025-10-01 has 96, 24 and 96. 2025-10-26 and 2026-10-25 have 100, 25 and 100. 2026-03-29 has 92, 23 and 92.
+- Forecasts: in every zone and column, every hour with data holds either one value at minute 0 or four values. No hour holds two or three. On this data the aligned hourly value is therefore equal to the plain hourly mean that the coverage gate uses. The largest difference is 0.0.
+- The rule works per hour because files change resolution. The FR load forecast, for example, has 52585 hours with one value and 16583 hours with four.
+- On the 15-minute grid from 2025-10-01, DE_LU and ES have 15-minute forecasts throughout, so no value is repeated. FR and the Swedish zones are hourly for part of that period. The FR `Solar` forecast has 32804 raw values there and 39932 after repetition. The Swedish load forecast has 35473 and 39940.
