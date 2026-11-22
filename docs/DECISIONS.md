@@ -51,9 +51,10 @@ Numbered entries: decision, reason, alternative rejected, date.
 
 ## 8. The token is read by a small parser of our own
 - Date: 2026-11-20
-- Decision: The `.env` file is read by the short parser already in the gate script, with the path resolved from the repo root.
+- Decision: The `.env` file is read by a short parser of our own, with the path resolved from the repo root.
 - Reason: It is about ten lines and adds no dependency.
 - Alternative rejected: `python-dotenv`.
+- Changed on 2026-11-22: The first wording placed the parser in the gate script. Entry 4 moved it into the package. It is `_token_from_env_file` in `src/epf/data/entsoe_api.py`.
 
 ## 9. Market time zone and the 15-minute switch date live in config
 - Date: 2026-11-20
