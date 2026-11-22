@@ -21,6 +21,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: Every line can be explained. `statsforecast` 2.1.1 requires pandas below 3.0, so a pandas 3 pin would have to change when the statistical baseline is added. A dry-run resolve of the full planned library set on 2026-11-20 chose pandas 2.3.3.
 - Alternative rejected: A full `pip freeze`. It is exact, but it lists packages the code never imports, and packages that pip installs only on Windows, such as `colorama`.
 - Exception, added 2026-11-20: numpy is pinned to 2.5.5 although the code does not import it. With numpy 2.5.5 and pandas 2.3.3, `pd.Timedelta(days=1)` raises a DeprecationWarning that says it "will raise an error in the future". `entsoe-py` 1.0.0 calls it in `query_day_ahead_prices`. An unpinned numpy could therefore break the price download on a later fresh install.
+- Exception, added 2026-11-22: pyarrow is pinned although the code does not import it. pandas needs it to read and write the Parquet files of the raw cache.
 
 ## 4. One shared ENTSO-E fetch-and-cache module
 - Date: 2026-11-20
