@@ -143,6 +143,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: `align_to_hours` and `align_to_quarter_hours` apply one rule per column and per UTC hour. To the hourly grid: an hour with one value at minute 0 keeps that value, an hour with four quarter-hour values gets their mean, and any other hour stays empty. To the 15-minute grid: an hour with one value at minute 0 has that value repeated on its four quarter-hours, and every other value stays at its own time.
 - Reason: The load, wind and solar values are mean power in MW over their interval. The mean of four quarter-hour values is therefore the hourly value, and an hourly value holds for each of its quarter-hours. In the raw forecast files of 2026-11-21, every hour with data held either one value at minute 0 or four values, in every zone and column. Some zones change from hourly to 15-minute inside a year, so the rule is applied per hour and not per file.
 - Alternatives rejected: Linear interpolation between hourly values, which invents a shape inside the hour that the forecast does not contain. A mean of the values present in a partly filled hour, which hides the gap. One resolution per file, which fails for the years that change resolution.
+- Added 2026-11-22, after the actual load pull: the actual load has 8 partly filled hours, 2 in FR and 6 in ES (DATA_NOTES, "Actual load"). They stay empty on the hourly grid.
 
 ## 23. The hourly coverage check lives beside the forecast downloader
 - Date: 2026-11-22

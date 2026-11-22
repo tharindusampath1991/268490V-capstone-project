@@ -55,7 +55,7 @@ Before the switch the client resamples each answer to hourly values with `resamp
 
 ## Raw ENTSO-E cache
 
-Built on 2026-11-20 in `src/epf/data/entsoe_cache.py`. The price download, the coverage gate and the Energy-Charts cross-check use it.
+Built on 2026-11-20 in `src/epf/data/entsoe_cache.py`. The price, forecast, actual load and weather downloads, the coverage gate and the Energy-Charts cross-check use it. Only one ENTSO-E download may run at a time: each run reads the manifest, downloads, then writes the manifest, so two runs at once would lose entries.
 
 - One Parquet file per dataset, zone and year: `{dataset}/{ZONE}_{YEAR}.parquet` under the cache folder. The cache folder is `data/raw/entsoe/` (DECISIONS entry 5).
 - `manifest.json` in the cache folder has one entry per saved file: query start, query end, download time, row count and `entsoe-py` version. All times are in UTC.
@@ -90,6 +90,23 @@ First run on 2026-11-22 at 10:23 market time, delivery days 2019-01-01 to 2026-1
 - Missing hours in the 2026 wind and solar files: ES 480 for `Wind Onshore` and 216 for `Solar`, FR 25 for `Solar` and `Wind Onshore` and 1 for `Wind Offshore`, each Swedish zone 72 for `Wind Onshore` and `Solar`. The 480 ES hours are the 20 days of DECISIONS entry 19.
 - Unit, read from the raw answers for DE_LU and FR on delivery day 2026-11-10: ENTSO-E states `MAW` (megawatt) for the actual load, the load forecast and the wind and solar forecast.
 - Most common step per file. DE_LU: 15-minute in all years. FR load forecast: hourly to 2024, 15-minute from 2025. FR wind and solar: hourly to 2025, 15-minute in 2026. ES: hourly to 2021, 15-minute from 2022. SE_1 to SE_4: hourly to 2025, 15-minute in 2026. A file that changes resolution inside the year shows the more common step, for example ES 2022 and the Swedish zones in 2025.
+
+## Actual load
+
+Read from the installed `entsoe-py` 1.0.0 source on 2026-11-22. Code: `src/epf/data/download_actual_load.py` (DECISIONS entry 24).
+
+- `EntsoePandasClient.query_load` asks for document type A65 with process type A16 (realised). It returns one column, `Actual Load`, in local time, and includes the end timestamp. It costs one request per month.
+- The project stores the frame as the client returns it, with the index in UTC and cut to [start, end), as the dataset `actual_load`.
+- Leakage rule: actual load is measured after delivery. A forecast for delivery day D may use it through day D-2 only (PROJECT_CONTEXT §5). The download does not apply this cut. The feature builder must.
+
+Full pull with `python -m epf.data.download_actual_load` on 2026-11-22, from 10:45 to 11:58 market time, delivery days 2019-01-01 to 2026-11-21:
+
+- 56 files, one per zone and year, 961826 rows. 714 monthly requests by the client's month split. The run took 73 minutes, and the client retried one request on its own after a connection error.
+- No repeated timestamp in any file. Every file passes `check_utc_index`.
+- Hours without any value: none in DE_LU and in SE_1 to SE_4. FR has 8, 2, 9, 21, 5, 0, 3 and 0 in the years 2019 to 2026. ES has 35 in 2025 and none in the other years.
+- All seven zones have actual load up to 2026-11-21 with no missing hour in 2026.
+- Most common step per file: the same pattern as the load forecast. DE_LU is 15-minute in all years, FR is hourly to 2024 and 15-minute from 2025, ES is hourly to 2021 and 15-minute from 2022, the Swedish zones are hourly to 2025 and 15-minute in 2026.
+- Unlike the forecasts, the actual load has hours that are partly filled. FR has 2 such hours, both on 2025-12-10 (14:00 and 18:00 UTC, with 2 and 3 values). ES has 6: 2023-11-21 19:00, 2024-10-11 00:00, 2025-04-28 10:00, 2026-06-11 08:00, 2026-10-25 00:00 and 2026-11-17 05:00 UTC, each with 2 or 3 values. `align_to_hours` leaves these 8 hours empty (DECISIONS entry 22). The coverage count above treats them as present, because it counts an hour with any value.
 
 ## Energy-Charts price cross-check
 
