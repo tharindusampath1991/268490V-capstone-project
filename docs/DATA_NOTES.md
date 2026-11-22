@@ -42,6 +42,15 @@ First full run on 2026-11-20, delivery days 2019-01-01 to 2026-11-19, 7 zones:
 - Every zone and year had all expected values: 8760 or 8784 in the hourly years, 15387 in 2025 and 31008 in 2026.
 - No missing value, no price at an unexpected time and no repeated timestamp in any zone or year.
 
+Refresh on 2026-11-22 at 10:13 market time, delivery days 2019-01-01 to 2026-11-21:
+
+- Only the seven 2026 files were downloaded again. The run took 6 minutes.
+- Every zone has all expected values in 2019 to 2025. No file has a price at an unexpected time or a repeated timestamp.
+- ES and SE_1 to SE_4 are complete to 2026-11-21, with 31200 values in 2026.
+- DE_LU has no price for delivery days 2026-11-20 and 2026-11-21, which is 192 values. FR has none for 2026-11-21, which is 96 values. Asked one day at a time at 10:20, ENTSO-E returned 96 prices for DE_LU on 2026-11-19 and for FR on 2026-11-20, and none for the later days. These days were not yet available through the client. They are the newest days, not gaps inside the history.
+- On this data the last delivery day that is complete in all zones is 2026-11-19.
+- No price in the period of the cross-check changed. The 2026 files before and after the refresh hold the same values up to delivery day 2026-11-19, and these still equal the saved Energy-Charts prices in all seven zones. The cross-check was therefore not run again.
+
 Before the switch the client resamples each answer to hourly values with `resample('h').first()` (read from the source). A missing hour inside an answer can therefore arrive as a row with an empty price. The check counts an empty price as missing.
 
 ## Raw ENTSO-E cache
