@@ -125,3 +125,9 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: ES is one of the three core zones approved in Milestone 1. In the data downloaded on 2026-11-20, the ES wind forecast covers at least 99.73% of hours in every year from 2019 to 2025. In 2026 it covers 93.81%: 20 whole days are missing, 480 of 7752 hours, in 9 blocks. Dropping the column would take the wind forecast out of RQ2 for a core zone because of 20 days.
 - Alternatives rejected: Applying the drop rule to the ES wind column. Removing ES from M2, which the approved scope does not allow.
 - Risk: The longest missing blocks are 13 to 17 February and 6 to 12 November 2026. The November block lies in the last 90 days of the data, which is the planned test window. The ES results that use the wind forecast must state how these days were handled.
+
+## 20. The time functions refuse an index that is not UTC, sorted and unique
+- Date: 2026-11-22
+- Decision: `check_utc_index` in `src/epf/data/resolution.py` raises an error when the index of a series is not a time index in UTC, is not sorted from old to new, or holds a timestamp more than once. The price split and the covariate alignment call it first. It repairs nothing.
+- Reason: A mean over an hour is wrong when a timestamp appears twice, and a local-time index has a repeated hour on the day the clocks go back. Stopping makes the problem visible. The repair belongs to the cleaning step, where each rule is documented.
+- Alternative rejected: Sorting the index and dropping repeated timestamps inside the function. A bad download would then pass unnoticed.

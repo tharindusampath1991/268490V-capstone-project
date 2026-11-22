@@ -65,6 +65,14 @@ def hourly_index(start: pd.Timestamp, end: pd.Timestamp) -> pd.DatetimeIndex:
     return _steps(start.tz_convert("UTC"), end.tz_convert("UTC"), "h")
 
 
+def quarter_hour_index(start: pd.Timestamp, end: pd.Timestamp) -> pd.DatetimeIndex:
+    """Return every quarter-hour in [start, end) as a UTC index.
+
+    Input: start and end are time zone aware.
+    """
+    return _steps(start.tz_convert("UTC"), end.tz_convert("UTC"), "15min")
+
+
 def _steps(start: pd.Timestamp, end: pd.Timestamp, freq: str) -> pd.DatetimeIndex:
     """Return the time steps in [start, end). Empty when start equals end."""
     index = pd.date_range(start, end, freq=freq)

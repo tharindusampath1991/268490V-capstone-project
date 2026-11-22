@@ -3,7 +3,13 @@
 import pandas as pd
 import pytest
 
-from epf.data.market_time import data_range, expected_price_index, hourly_index, year_ranges
+from epf.data.market_time import (
+    data_range,
+    expected_price_index,
+    hourly_index,
+    quarter_hour_index,
+    year_ranges,
+)
 
 MARKET_TZ = "Europe/Berlin"
 SWITCH = pd.Timestamp("2025-10-01", tz=MARKET_TZ)
@@ -83,3 +89,23 @@ def test_hourly_index_has_one_utc_step_per_hour_of_a_clock_change_day():
     assert len(index) == 25
     assert str(index.tz) == "UTC"
     assert index[0] == pd.Timestamp("2026-10-24 22:00", tz="UTC")
+
+
+@pytest.mark.parametrize("day, next_day, count", [
+    ("2025-10-01", "2025-10-02", 96),    # ordinary day
+    ("2026-03-29", "2026-03-30", 92),    # clocks go forward
+    ("2026-10-25", "2026-10-26", 100),   # clocks go back
+])
+def test_quarter_hour_index_counts_the_quarter_hours_of_a_delivery_day(day, next_day, count):
+    index = quarter_hour_index(market_time(day), market_time(next_day))
+
+    assert len(index) == count
+    assert str(index.tz) == "UTC"
+
+
+def test_quarter_hour_index_starts_at_midnight_in_market_time():
+    index = quarter_hour_index(market_time("2026-10-25"), market_time("2026-10-26"))
+
+    assert index[0] == pd.Timestamp("2026-10-24 22:00", tz="UTC")
+    assert index[1] == pd.Timestamp("2026-10-24 22:15", tz="UTC")
+    assert index[-1] == pd.Timestamp("2026-10-25 22:45", tz="UTC")
