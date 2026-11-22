@@ -37,6 +37,7 @@ Fill in as they come to exist.
 - Setup: `python3.12 -m venv .venv`, then `.venv\Scripts\python -m pip install -r requirements.txt`
 - Tests: `.venv\Scripts\python -m pytest`
 - Download prices: `.venv\Scripts\python -m epf.data.download_prices` (first full run: about 80 minutes)
+- Download forecasts: `.venv\Scripts\python -m epf.data.download_forecasts` (load forecast and wind and solar forecast. Current year only: about 20 minutes. Run one ENTSO-E download at a time, they share one cache manifest)
 - Price cross-check: `.venv\Scripts\python -m epf.data.crosscheck_prices` (after the price download, about 30 minutes)
 - Coverage gate: `.venv\Scripts\python scripts/check_coverage.py` (first full run: about 4 hours, writes `docs/coverage_gate.md`)
 - Build data:
