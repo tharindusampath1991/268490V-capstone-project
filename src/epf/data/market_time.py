@@ -43,6 +43,23 @@ def year_ranges(start: pd.Timestamp,
     return ranges
 
 
+def delivery_days(start: pd.Timestamp,
+                  end: pd.Timestamp) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Split [start, end) into delivery days.
+
+    Input: start and end are 00:00 of a day in market time.
+    Output: one (day start, next day start) pair per delivery day, in the time
+        zone of start. A clock-change day is 23 or 25 hours long.
+    """
+    days = []
+    day = start.date()
+    while day < end.date():
+        next_day = day + timedelta(days=1)
+        days.append((pd.Timestamp(day, tz=start.tz), pd.Timestamp(next_day, tz=start.tz)))
+        day = next_day
+    return days
+
+
 def expected_price_index(start: pd.Timestamp, end: pd.Timestamp,
                          quarter_hour_start: pd.Timestamp) -> pd.DatetimeIndex:
     """Return every market time unit in [start, end).

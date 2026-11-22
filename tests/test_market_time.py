@@ -1,10 +1,13 @@
 """Tests for the market time helpers: delivery days, clock changes and the 15-minute switch."""
 
+from datetime import timedelta
+
 import pandas as pd
 import pytest
 
 from epf.data.market_time import (
     data_range,
+    delivery_days,
     expected_price_index,
     hourly_index,
     native_resolution,
@@ -129,3 +132,19 @@ def test_native_resolution_is_a_dash_for_fewer_than_two_timestamps():
     index = pd.date_range("2025-01-01", periods=1, freq="h", tz="UTC")
 
     assert native_resolution(index) == "-"
+
+
+def test_delivery_days_gives_each_day_from_midnight_to_midnight_in_market_time():
+    days = delivery_days(market_time("2026-10-24"), market_time("2026-10-27"))
+
+    assert days == [
+        (market_time("2026-10-24"), market_time("2026-10-25")),
+        (market_time("2026-10-25"), market_time("2026-10-26")),
+        (market_time("2026-10-26"), market_time("2026-10-27")),
+    ]
+    # The day the clocks go back is 25 hours long.
+    assert days[1][1] - days[1][0] == timedelta(hours=25)
+
+
+def test_delivery_days_is_empty_for_an_empty_period():
+    assert delivery_days(market_time("2026-10-24"), market_time("2026-10-24")) == []

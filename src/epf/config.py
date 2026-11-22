@@ -18,6 +18,7 @@ class Zone:
     holiday_country: str
     group: str
     energy_charts: str | None = None
+    weather_point: dict | None = None
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:

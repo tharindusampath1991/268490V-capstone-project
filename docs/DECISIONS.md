@@ -155,3 +155,24 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: The actual total load is downloaded with `EntsoePandasClient.query_load` and saved as the dataset `actual_load`, one file per zone and year, through the same cache and the same printed counts as the forecasts. The code is in `src/epf/data/download_actual_load.py`.
 - Reason: The load forecast files are already in the cache and keep their name and content. Actual load also follows a different rule from the forecasts: a model input may use it through D-2 only (PROJECT_CONTEXT §5). A separate dataset keeps that visible.
 - Alternative rejected: `query_load_and_forecast`, which returns the forecast and the actual load joined in one frame. It would download the load forecast a second time and put a leakage-sensitive column next to a safe one.
+
+## 25. Weather forecasts come from the Open-Meteo Single Runs API
+- Date: 2026-11-22, approved by the owner
+- Decision: Weather inputs are downloaded from `https://single-runs-api.open-meteo.com/v1/forecast`. Each request names one model run by its initialisation time (`run=`). For delivery day D the download keeps the hours of D and stores the run time next to every value, in the column `run`. Raw files are `data/raw/open_meteo/weather_forecast/{ZONE}_{YEAR}.parquet`, through the same cache code as the ENTSO-E downloads.
+- Reason: The leakage rule needs forecasts with a known issue time. This endpoint is the only one in the Open-Meteo docs that returns a run by its initialisation time. Storing the run time lets the backtest check each value against the forecast cutoff.
+- Alternatives rejected: The Historical Forecast API, which stitches the first hours of each run into one series, so a value has no usable issue time and is close to an analysis. The Previous Runs API, which only gives "the value predicted 24 hours before valid time" and does not state the run. The reanalysis archive, which is not a forecast.
+- Limit: Only the hours of delivery day D are kept from each run, about 24 of 48 downloaded hours. A request for a run that is not in the archive adds no rows, and the hours are counted as missing.
+
+## 26. ECMWF IFS HRES, the 00:00 UTC run of day D-1, four variables
+- Date: 2026-11-22, approved by the owner
+- Decision: The model is ECMWF IFS HRES at 9 km (`models=ecmwf_ifs`). For delivery day D the run of day D-1 at 00:00 UTC is used. The variables are `temperature_2m`, `wind_speed_10m`, `wind_speed_100m` and `shortwave_radiation`, with wind speed in m/s. The first run is 2024-03-14, so the first delivery day with weather is 2024-03-15.
+- Reason: The Open-Meteo docs give this model an archive from 14 March 2024 and every other model one from 2 April 2026. The docs state that a 00 UTC run is available from about 04 to 06 UTC. Gate closure at 12:00 CET is 11:00 UTC in winter and 10:00 UTC in summer, so the run is known at the forecast origin. The hours of D are 22 to 47 hours after the run, inside the model's hourly range of 90 hours.
+- Alternatives rejected: The 18:00 UTC run of D-2, which is safer on timing but six hours older. The 06:00 UTC run of D-1, which the docs make available at about 10 to 12 UTC, too close to gate closure. Wind at 100 m only: the owner chose to keep the 10 m wind as well.
+- Limits: Availability before gate closure is taken from the docs, not measured. The docs call the archive from March 2024 "IFS Cycle 49R1 hindcasts", so the early runs may be re-run forecasts and not the ones issued at the time. A request for the run of 2024-03-13 was refused as not available.
+
+## 27. One weather point per zone
+- Date: 2026-11-22, approved by the owner
+- Decision: Each zone has one `weather_point` in the config, and the forecast of the model grid cell at that point stands for the zone. DE_LU: Kassel (51.32, 9.50). FR: Paris (48.86, 2.35). ES: Madrid (40.42, -3.70). SE_1: Luleå (65.58, 22.15). SE_2: Sundsvall (62.40, 17.32). SE_3: Stockholm (59.33, 18.07). SE_4: Malmö (55.60, 13.01). Coordinates are from Wikipedia, rounded to two decimals.
+- Reason: One point per zone is one config entry and one rule for all seven zones. Paris and Madrid are the largest demand centres. Kassel is near the centre of Germany, between the wind in the north and the solar in the south. The four Swedish price areas are named after these four cities.
+- Alternative rejected: Several points per zone with an average. It fits a large zone better, but it needs more requests and an averaging rule to defend.
+- Limit: One point cannot stand for the weather of a whole zone. This is weakest for DE_LU.

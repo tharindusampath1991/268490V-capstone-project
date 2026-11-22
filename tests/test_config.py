@@ -43,3 +43,12 @@ def test_project_config_switch_instant_matches_the_entsoe_client():
     switch = pd.Timestamp(market["quarter_hour_start"], tz=market["timezone"])
 
     assert switch == QUARTER_MTU_SDAC_GOLIVE
+
+
+def test_project_config_gives_every_zone_a_weather_point_on_the_globe():
+    for zone in ordered_zones(load_config()):
+        point = zone.weather_point
+
+        assert point["place"]
+        assert -90 <= point["latitude"] <= 90
+        assert -180 <= point["longitude"] <= 180
