@@ -264,6 +264,17 @@ def test_align_to_hours_leaves_an_hour_empty_when_its_only_value_is_not_on_the_h
     assert aligned["Forecasted Load"].isna().all()
 
 
+def test_align_to_hours_reads_a_lone_value_on_the_hour_as_an_hourly_value():
+    hour = pd.Timestamp("2026-10-25 10:00", tz="UTC")
+    data = quarter_hour_frame("2026-10-25", "2026-10-26")
+    data[(data.index.floor("h") == hour) & (data.index != hour)] = float("nan")
+
+    aligned = align_to_hours(data)
+
+    assert aligned.loc[hour, "Forecasted Load"] == data.loc[hour, "Forecasted Load"]
+    assert aligned["Forecasted Load"].notna().all()
+
+
 def test_align_to_hours_rejects_an_unsorted_index():
     data = hourly_frame("2026-10-25", "2026-10-26").iloc[::-1]
 
@@ -344,6 +355,17 @@ def test_align_to_quarter_hours_does_not_repeat_a_value_that_is_not_on_the_hour(
     assert len(aligned) == 4
     assert aligned["Forecasted Load"].notna().sum() == 1
     assert aligned.loc[pd.Timestamp("2026-10-25 10:15", tz="UTC"), "Forecasted Load"] == 7.0
+
+
+def test_align_to_quarter_hours_repeats_a_lone_value_on_the_hour_over_empty_rows():
+    hour = pd.Timestamp("2026-10-25 10:00", tz="UTC")
+    data = quarter_hour_frame("2026-10-25", "2026-10-26")
+    in_hour = data.index.floor("h") == hour
+    data[in_hour & (data.index != hour)] = float("nan")
+
+    aligned = align_to_quarter_hours(data)
+
+    assert aligned.loc[in_hour, "Forecasted Load"].tolist() == [data.loc[hour, "Forecasted Load"]] * 4
 
 
 def test_align_to_quarter_hours_rejects_a_repeated_timestamp():

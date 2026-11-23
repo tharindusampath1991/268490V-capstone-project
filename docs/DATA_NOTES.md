@@ -210,6 +210,7 @@ Built on 2026-11-22 in `src/epf/data/resolution.py` (DECISIONS entries 20 to 22)
 - Experiment Q uses `quarter_hour_prices`: the 15-minute prices from 2025-10-01, unchanged.
 - Covariates to the hourly grid, `align_to_hours`, per column and hour: one value at minute 0 is kept, four quarter-hour values give their mean, anything else stays empty.
 - Covariates to the 15-minute grid, `align_to_quarter_hours`, per column and hour: one value at minute 0 is repeated on the four quarter-hours, every other value stays at its own time. Nothing is interpolated.
+- Limit of both alignment functions: they count values, not rows. An hour whose only value is at minute 0 counts as an hourly value, also when the file has empty rows for the other three quarter-hours. A column cannot show the difference, because an hourly column beside a 15-minute column looks the same. Measured on 2026-11-23 over the raw load forecast, wind and solar forecast and actual load files of all seven zones, 2019 to 2026: no hour has one value at minute 0 next to other rows in the same hour. Every hour with one value has one row. So the case does not occur in this data.
 
 Run over the raw files of 2026-11-22, delivery days 2019-01-01 to 2026-11-21. The period has 69168 hours, and 40036 quarter-hours from 2025-10-01.
 

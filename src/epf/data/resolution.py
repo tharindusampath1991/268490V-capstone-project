@@ -1,8 +1,8 @@
 """Time resolution handling: the index check, the price split and the covariate alignment.
 
 All series are in UTC. In UTC every hour holds four quarter-hours, also on a
-clock-change day, which is simply 23 or 25 hours long. No function here fills
-a gap or writes a file.
+clock-change day, which is simply 23 or 25 hours long. No function here writes
+a file or fills a gap, apart from the limit stated at align_to_hours.
 """
 
 from datetime import timedelta
@@ -70,6 +70,10 @@ def align_to_hours(data: pd.DataFrame) -> pd.DataFrame:
           one value, at minute 0       the value, unchanged
           four quarter-hour values     their mean
           anything else                empty
+        Limit: values are counted, not rows. An hour whose only value is at
+        minute 0 counts as hourly, also when the frame has empty rows for
+        its other quarter-hours. A column that is hourly beside a 15-minute
+        column looks exactly like that.
     Raises ValueError when the index fails check_utc_index.
     """
     check_utc_index(data)
@@ -89,6 +93,8 @@ def align_to_quarter_hours(data: pd.DataFrame) -> pd.DataFrame:
                                        its hour, so nothing is interpolated.
           anything else                each value stays at its own time and
                                        a missing quarter-hour stays empty
+        Limit: the same as in align_to_hours. A lone value at minute 0 is
+        repeated over empty rows of its hour.
     Raises ValueError when the index fails check_utc_index.
     """
     check_utc_index(data)
