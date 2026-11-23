@@ -69,3 +69,15 @@ def test_project_config_split_dates_follow_from_the_last_delivery_day():
         date.fromisoformat(last_day), splits["test_days"], splits["validation_days"])
     assert splits["validation_start"] == validation_start.isoformat()
     assert splits["test_start"] == test_start.isoformat()
+
+
+def test_project_config_drops_only_columns_of_configured_zones_that_are_not_kept():
+    config = load_config()
+    gate = config["coverage_gate"]
+    zone_keys = {zone.key for zone in ordered_zones(config)}
+    kept = {(mark["zone"], mark["column"]) for mark in gate["keep_columns"]}
+
+    assert gate["drop_columns"]
+    for mark in gate["drop_columns"]:
+        assert mark["zone"] in zone_keys
+        assert (mark["zone"], mark["column"]) not in kept

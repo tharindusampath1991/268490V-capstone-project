@@ -119,3 +119,16 @@ coverage_gate:
   keep_columns:
     - zone: ES
       column: Wind Onshore
+  # Forecast columns the gate report marks "drop". The cleaning step leaves them out of
+  # the processed tables. Keep this list equal to the drop marks in docs/coverage_gate.md.
+  drop_columns:
+    - zone: FR
+      column: Wind Offshore
+    - zone: SE_1
+      column: Solar
+    - zone: SE_2
+      column: Solar
+    - zone: SE_3
+      column: Solar
+    - zone: SE_4
+      column: Solar
