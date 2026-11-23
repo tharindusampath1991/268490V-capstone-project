@@ -43,12 +43,33 @@ The ENTSO-E Transparency Platform API is free but needs registration and a secur
 
 | Source | Use | Access and licence |
 |---|---|---|
-| ENTSO-E Transparency Platform | Day-ahead prices, load forecast, wind and solar forecast. Primary source | Free API with a security token |
+| ENTSO-E Transparency Platform | Day-ahead prices, load forecast, wind and solar forecast, actual load. Primary source | Free API with a security token |
 | Energy-Charts API (Fraunhofer ISE) | Prices, as a cross-check | Free, no key. CC BY 4.0 from Bundesnetzagentur \| SMARD.de for DE-LU, FR and SE4. Private and internal use only for ES, SE1, SE2 and SE3, so their cross-check results are not published |
-| Open-Meteo | Archived weather forecasts | Free for non-commercial use, no key, CC BY 4.0 |
+| Open-Meteo | Archived weather forecast runs of ECMWF IFS HRES, from 14 March 2024 (Single Runs API) | Free for non-commercial use, no key, CC BY 4.0. Weather data by [Open-Meteo.com](https://open-meteo.com/) |
 | Python `holidays` | Public holidays per country | Open source |
 
 Raw data is never committed. Only the scripts that download and prepare it are.
+
+## Data downloads
+
+Run these from the repo root once the token is in place. On Linux or macOS, use `.venv/bin/python`.
+
+| Step | Command | First full run |
+|---|---|---|
+| Day-ahead prices | `.venv\Scripts\python -m epf.data.download_prices` | about 80 minutes |
+| Load forecast, wind and solar forecast | `.venv\Scripts\python -m epf.data.download_forecasts` | about 4 hours, measured as part of the coverage gate |
+| Actual load | `.venv\Scripts\python -m epf.data.download_actual_load` | about 75 minutes |
+| Weather forecasts | `.venv\Scripts\python -m epf.data.download_weather` | about 4.5 hours |
+| Price cross-check against Energy-Charts | `.venv\Scripts\python -m epf.data.crosscheck_prices` | about 30 minutes, after the price download |
+| Coverage gate report | `.venv\Scripts\python scripts/check_coverage.py` | reads the saved price and forecast files, writes `docs/coverage_gate.md` |
+
+- Raw files are saved under `data/raw/`, one Parquet file per dataset, zone and year. Git ignores this folder.
+- Each command prints counts of missing and repeated values. It changes no value.
+- A finished year is read from disk on the next run. A run that stops can be started again and resumes from the saved files.
+- Run one ENTSO-E command at a time. They share one cache manifest.
+- The weather download uses about 6900 of the 10000 calls per day that Open-Meteo allows for free use.
+
+The measured results of each run are in [docs/DATA_NOTES.md](docs/DATA_NOTES.md).
 
 ## Environment
 
