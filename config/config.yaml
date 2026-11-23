@@ -53,8 +53,13 @@ data:
   start: "2019-01-01"   # first delivery day. Quoted so YAML keeps it a string.
   end: null             # DATA_END. Frozen on Sun 22 Nov 2026, never moved afterwards.
 
-# Absolute split dates. Written when DATA_END is frozen (PROJECT_CONTEXT section 4).
+# Split by time (PROJECT_CONTEXT section 4). The test set is the last test_days delivery
+# days up to data.end, the validation set the validation_days before it, train the rest.
+# The two absolute dates are written when DATA_END is frozen. A test checks that they
+# follow from data.end and the two lengths.
 splits:
+  test_days: 90
+  validation_days: 60
   validation_start: null
   test_start: null
 

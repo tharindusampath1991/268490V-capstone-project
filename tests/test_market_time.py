@@ -1,6 +1,6 @@
 """Tests for the market time helpers: delivery days, clock changes and the 15-minute switch."""
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pandas as pd
 import pytest
@@ -12,6 +12,7 @@ from epf.data.market_time import (
     hourly_index,
     native_resolution,
     quarter_hour_index,
+    split_starts,
     year_ranges,
 )
 
@@ -148,3 +149,19 @@ def test_delivery_days_gives_each_day_from_midnight_to_midnight_in_market_time()
 
 def test_delivery_days_is_empty_for_an_empty_period():
     assert delivery_days(market_time("2026-10-24"), market_time("2026-10-24")) == []
+
+
+def test_split_starts_counts_the_test_days_back_from_the_last_day():
+    validation_start, test_start = split_starts(date(2026, 1, 10), test_days=3, validation_days=2)
+
+    assert test_start == date(2026, 1, 8)          # 8, 9 and 10 January
+    assert validation_start == date(2026, 1, 6)    # 6 and 7 January
+
+
+def test_split_starts_gives_90_test_days_and_60_validation_days():
+    last_day = date(2026, 11, 19)
+
+    validation_start, test_start = split_starts(last_day, test_days=90, validation_days=60)
+
+    assert (last_day - test_start).days + 1 == 90
+    assert (test_start - validation_start).days == 60

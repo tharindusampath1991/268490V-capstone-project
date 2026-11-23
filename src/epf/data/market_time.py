@@ -26,6 +26,19 @@ def data_range(config: dict, today: pd.Timestamp) -> tuple[pd.Timestamp, pd.Time
     return start, pd.Timestamp(next_day, tz=market_tz)
 
 
+def split_starts(last_day: date, test_days: int, validation_days: int) -> tuple[date, date]:
+    """Return the first delivery day of the validation set and of the test set.
+
+    Input: the last delivery day of the data, and the length of the test set
+        and of the validation set in delivery days.
+    Output: (validation start, test start). The test set is the last test_days
+        delivery days, ending on last_day. The validation set is the
+        validation_days delivery days before it.
+    """
+    test_start = last_day - timedelta(days=test_days - 1)
+    return test_start - timedelta(days=validation_days), test_start
+
+
 def year_ranges(start: pd.Timestamp,
                 end: pd.Timestamp) -> list[tuple[int, pd.Timestamp, pd.Timestamp]]:
     """Split [start, end) into one piece per calendar year.
