@@ -51,6 +51,17 @@ Refresh on 2026-11-22 at 10:13 market time, delivery days 2019-01-01 to 2026-11-
 - On this data the last delivery day that is complete in all zones is 2026-11-19.
 - No price in the period of the cross-check changed. The 2026 files before and after the refresh hold the same values up to delivery day 2026-11-19, and these still equal the saved Energy-Charts prices in all seven zones. The cross-check was therefore not run again.
 
+Check on 2026-11-23 at 01:27 market time, delivery days up to 2026-11-22. The coverage gate downloaded the 2026 price files again.
+
+- DE_LU and FR now have delivery day 2026-11-22. DE_LU still has no price for 2026-11-20 and 2026-11-21, and FR has none for 2026-11-21. These days are therefore holes with later data after them. The note of 2026-11-22 above took them for days that were only late.
+- DE_LU, raw answers at 01:50: ENTSO-E holds two price series per day, marked sequence 1 and sequence 2. The client asks for sequence 1 (see "ENTSO-E client behaviour"). Sequence 1 exists for 2026-11-19 and 2026-11-22 and is absent for 2026-11-20 and 2026-11-21. Sequence 2 exists for all four days.
+- Sequence 2 is a different auction and cannot replace sequence 1. From 2026-11-12 to 2026-11-22 both exist on 9 days. On those days no quarter-hour has the same price in both, and the largest difference within a day lies between 15.28 and 124.99 EUR/MWh.
+- FR, raw answer at 01:50: there is no price series for 2026-11-21.
+- Energy-Charts, asked at the same time: it has 96 DE-LU prices on 2026-11-20 and on 2026-11-21, with day means of 214.51 and 187.88 EUR/MWh. Its DE-LU day means for 2026-11-19 and 2026-11-22, 224.83 and 204.08, equal those of ENTSO-E sequence 1. It has no FR price for 2026-11-21.
+- So the DE_LU prices of the two days exist, but ENTSO-E had not published them in the series this project uses. Energy-Charts values are not used to fill ENTSO-E (DECISIONS entry 7). The three zone-days stay missing in the raw data.
+- The last delivery day before the holes that is complete in all zones is 2026-11-19.
+- No price in the period of the cross-check changed between 2026-11-22 and 2026-11-23, so the cross-check was not run again.
+
 Before the switch the client resamples each answer to hourly values with `resample('h').first()` (read from the source). A missing hour inside an answer can therefore arrive as a row with an empty price. The check counts an empty price as missing.
 
 ## Raw ENTSO-E cache
@@ -131,7 +142,7 @@ Result of the full run on 2026-11-20, delivery days 2019-01-01 to 2026-11-19 (`d
 
 ## Coverage gate results
 
-The first full run was on 2026-11-20. It took 4 hours 19 minutes, and the client retried 5 requests on its own. The run was repeated on 2026-11-21 with the rules of DECISIONS entry 19. That run took 28 minutes, because only the 2026 files were downloaded again. The numbers below are from the second run, delivery days 2019-01-01 to 2026-11-20 (`docs/coverage_gate.md`).
+The first full run was on 2026-11-20. It took 4 hours 19 minutes, and the client retried 5 requests on its own. The run was repeated on 2026-11-21 with the rules of DECISIONS entry 19. That run took 28 minutes, because only the 2026 files were downloaded again. The numbers in the first list below are from the second run, delivery days 2019-01-01 to 2026-11-20. `docs/coverage_gate.md` now holds a third run, described after that list.
 
 - All four Swedish zones pass. In every year their prices are at 100%, the load forecast is at 99.73% or more and the wind forecast at 99.07% or more.
 - The four Swedish zones have the same coverage shares in every year. In the 2024 files the timestamps are the same in all four zones and the values differ: the mean load forecast is 1276, 1822, 9530 and 2510 MW for SE_1 to SE_4.
@@ -142,6 +153,14 @@ The first full run was on 2026-11-20. It took 4 hours 19 minutes, and the client
 - DE_LU prices: on 2026-11-21 at 05:41 market time ENTSO-E had no DE_LU price for delivery day 2026-11-20, while FR had all 96 values. Delivery day 2026-11-19 was complete for both. So the newest DE_LU day can arrive later than in other zones. `DATA_END` must be a day that is complete in all zones.
 - No dataset in any zone has a repeated timestamp.
 - DE_LU forecasts are 15-minute in all years. In the other zones some years are hourly and some are 15-minute.
+
+Third run on 2026-11-23, delivery days 2019-01-01 to 2026-11-22. It took 23 minutes, because the 21 price and forecast files of 2026 were downloaded again.
+
+- All four Swedish zones pass again. Their lowest yearly shares are 100% for prices, 99.73% for the load forecast and 99.08% for the wind forecast.
+- No gate verdict and no keep or drop mark changed against the second run.
+- DE_LU prices are at 99.39% in 2026 and FR prices at 99.69%. These are the missing days described under "Raw price format".
+- ES `Wind Onshore` is at 93.87% in 2026 and stays "keep by decision". ES `Solar` is at 97.24%.
+- No dataset in any zone has a repeated timestamp.
 
 ## Weather forecasts
 
