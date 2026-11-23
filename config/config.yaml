@@ -11,6 +11,9 @@ market:
 # Folders, relative to the repo root.
 paths:
   raw: data/raw
+  processed: data/processed
+  # Approved columns and empty values per zone and table. Written when DATA_END is frozen.
+  approved_gaps: config/approved_gaps.yaml
   coverage_report: docs/coverage_gate.md
   crosscheck_report: docs/price_crosscheck.md
   # Results for zones whose Energy-Charts data is for private and internal use only.
