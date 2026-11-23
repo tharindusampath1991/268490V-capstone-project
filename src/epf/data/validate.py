@@ -196,6 +196,15 @@ def load_approved_gaps(path: Path) -> dict:
         return yaml.safe_load(handle)
 
 
+def report(summary: pd.DataFrame, problems: list[str]) -> None:
+    """Print the result of validate_processed and end with an error when a check failed."""
+    if not summary.empty:
+        print(summary.to_string(index=False))
+    if problems:
+        sys.exit("Validation failed:\n" + "\n".join(problems))
+    print("Validation passed.")
+
+
 def run(config: dict) -> None:
     """Validate the processed tables named by a config and print the summary.
 
@@ -208,13 +217,8 @@ def run(config: dict) -> None:
         approved = load_approved_gaps(REPO_ROOT / config["paths"]["approved_gaps"])
     except (ValueError, FileNotFoundError) as error:
         sys.exit(str(error))
-    summary, problems = validate_processed(REPO_ROOT / config["paths"]["processed"],
-                                           ordered_zones(config), period, approved)
-    if not summary.empty:
-        print(summary.to_string(index=False))
-    if problems:
-        sys.exit("Validation failed:\n" + "\n".join(problems))
-    print("Validation passed.")
+    report(*validate_processed(REPO_ROOT / config["paths"]["processed"],
+                               ordered_zones(config), period, approved))
 
 
 def main() -> None:
