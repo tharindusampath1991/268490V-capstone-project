@@ -158,7 +158,7 @@ The first full run was on 2026-11-20. It took 4 hours 19 minutes, and the client
 - FR `Wind Offshore`: no data before 2023, 40.29% in 2023, and 99.99% or more from 2024. Marked drop for the same reason.
 - ES `Wind Onshore`: 99.73% or more from 2019 to 2025, and 93.83% in 2026. In the files of 2026-11-20 the gap was 20 whole days, 480 hours, in 9 blocks: 2 Feb, 13 to 17 Feb, 20 Feb, 16 to 17 Mar, 27 Mar, 30 Mar, 11 Jun, 16 Jun and 6 to 12 Nov. The column is kept by decision (entry 19). The days stay missing in the raw data.
 - ES `Solar` is at 97.22% in 2026.
-- DE_LU prices: on 2026-11-21 at 05:41 market time ENTSO-E had no DE_LU price for delivery day 2026-11-20, while FR had all 96 values. Delivery day 2026-11-19 was complete for both. So the newest DE_LU day can arrive later than in other zones. `DATA_END` must be a day that is complete in all zones.
+- DE_LU prices: on 2026-11-21 at 05:41 market time ENTSO-E had no DE_LU price for delivery day 2026-11-20, while FR had all 96 values. Delivery day 2026-11-19 was complete for both. At the time this was read as a DE_LU day that arrives later than in other zones. The check of 2026-11-23 under "Raw price format" showed that the day is a hole: later days are present and this one is not. `DATA_END` must be a day that is complete in all zones.
 - No dataset in any zone has a repeated timestamp.
 - DE_LU forecasts are 15-minute in all years. In the other zones some years are hourly and some are 15-minute.
 
