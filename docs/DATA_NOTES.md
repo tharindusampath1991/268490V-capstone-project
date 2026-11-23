@@ -66,10 +66,18 @@ Before the switch the client resamples each answer to hourly values with `resamp
 
 ## Raw ENTSO-E cache
 
-Built on 2026-11-20 in `src/epf/data/entsoe_cache.py`. The price, forecast, actual load and weather downloads, the coverage gate and the Energy-Charts cross-check use it. Only one ENTSO-E download may run at a time: each run reads the manifest, downloads, then writes the manifest, so two runs at once would lose entries.
+Built on 2026-11-20 in `src/epf/data/entsoe_cache.py`. The price, forecast, actual load and weather downloads, the coverage gate and the Energy-Charts cross-check use it.
 
-- One Parquet file per dataset, zone and year: `{dataset}/{ZONE}_{YEAR}.parquet` under the cache folder. The cache folder is `data/raw/entsoe/` (DECISIONS entry 5).
-- `manifest.json` in the cache folder has one entry per saved file: query start, query end, download time, row count and `entsoe-py` version. All times are in UTC.
+The same code serves three cache folders, each with its own `manifest.json`:
+
+- `data/raw/entsoe/` for prices, load forecast, wind and solar forecast and actual load (DECISIONS entry 5).
+- `data/raw/open_meteo/` for the weather forecasts.
+- `data/raw/energy_charts/` for the cross-check prices.
+
+Only one download per cache folder may run at a time: each run reads the manifest, downloads, then writes the manifest, so two runs at once would lose entries. The four ENTSO-E datasets and the coverage gate share the first folder.
+
+- One Parquet file per dataset, zone and year: `{dataset}/{ZONE}_{YEAR}.parquet` under the cache folder.
+- `manifest.json` in the cache folder has one entry per saved file: query start, query end, download time, row count and `entsoe-py` version. All times are in UTC. The version field has no meaning in the Open-Meteo and Energy-Charts manifests.
 - A saved file is reused only when the manifest shows the same query start and end. A partial year is downloaded again when the requested end moves.
 - An empty answer is never saved. It is asked again on the next run.
 - A saved file that was deleted by hand is downloaded again.
