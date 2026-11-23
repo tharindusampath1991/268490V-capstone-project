@@ -23,7 +23,7 @@ Smoke test on 2026-11-20: DE_LU, delivery day 2026-11-18, through `call_entsoe` 
 - The client makes up to 3 attempts, 60 seconds apart, and only for connection errors and HTTP 527 or 599. It has no timeout unless one is passed.
 - The client masks the token in the messages of HTTP and connection errors. The exception object still holds the request, and the request URL contains the token.
 - The production type names in the library are Solar, Wind Offshore and Wind Onshore. The live test under "Forecast downloads" confirmed these names for DE_LU and SE_3.
-- Observed on 2026-11-20 with numpy 2.5.5 and pandas 2.3.3: `pd.Timedelta(days=1)` raises a DeprecationWarning about the 'generic' NumPy timedelta unit, which "will raise an error in the future". `query_day_ahead_prices` calls `pd.Timedelta(days=1)`. numpy is not pinned in `requirements.txt`. Project code uses `datetime.timedelta` for day steps.
+- Observed on 2026-11-20 with numpy 2.5.5 and pandas 2.3.3: `pd.Timedelta(days=1)` raises a DeprecationWarning about the 'generic' NumPy timedelta unit, which "will raise an error in the future". `query_day_ahead_prices` calls `pd.Timedelta(days=1)`. numpy is therefore pinned to 2.5.5 in `requirements.txt` (DECISIONS entry 3). Project code uses `datetime.timedelta` for day steps.
 
 ## Raw price format
 
