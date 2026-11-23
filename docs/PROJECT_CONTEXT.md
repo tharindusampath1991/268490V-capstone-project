@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — CS5998 Capstone
 
-Owner: A A T Sampath (268490V) · Last updated: 2026-11-20
+Owner: A A T Sampath (268490V) · Last updated: 2026-11-23
 
 ## 0. Snapshot
 
@@ -74,7 +74,7 @@ Should-have for M2 (in the M1 plan for weeks 5–8): Chronos-2 and TimesFM 2.5 z
 |---|---|---|
 | ENTSO-E Transparency Platform | Day-ahead prices, actual load, day-ahead load forecast, day-ahead wind and solar forecast | Free API, needs registration and a security token. Python client: `entsoe-py` (area keys `DE_LU`, `FR`, `ES`, `SE_1`, `SE_2`, `SE_3`, `SE_4`) |
 | Energy-Charts API (Fraunhofer ISE) | Prices and generation, backup and cross-check | Free, no key. The licence differs by zone: CC BY 4.0 for DE-LU, FR and SE4, private and internal use only for ES, SE1, SE2 and SE3 (checked 2026-11-20, DECISIONS entry 12) |
-| Open-Meteo | Archived forecasts of temperature, wind, solar radiation | Free for non-commercial use, no key, CC BY 4.0 |
+| Open-Meteo | Archived forecast runs of temperature, wind speed at 10 m and 100 m, and solar radiation. Single Runs API, ECMWF IFS HRES, the 00:00 UTC run of D-1 (DECISIONS entries 25 and 26) | Free for non-commercial use, no key, CC BY 4.0 |
 | Python `holidays` | Public holidays per country. Sweden: `public` plus `de_facto` categories | Open source |
 
 Raw data is never committed. Only the scripts that download and prepare it.
@@ -85,9 +85,11 @@ Known traps:
 - Clock-change days have 23 or 25 hours (92 or 100 quarter-hours). 25 Oct 2026 falls inside the test window.
 - Negative prices are real. No log transform, no MAPE.
 - 2022 crisis is a different regime inside the hourly training data.
-- Weather must be forecasts with a known issue time, not reanalysis or measured weather. Archived ECMWF runs in Open-Meteo start March 2024.
+- Weather must be forecasts with a known issue time, not reanalysis or measured weather. Archived ECMWF runs in Open-Meteo start on 14 March 2024, so the first delivery day with weather is 2024-03-15. Availability of the 00:00 UTC run before gate closure is taken from the Open-Meteo docs, not measured (DECISIONS entry 26).
 - Energy-Charts forecast coverage outside Germany is unverified. ENTSO-E is the primary source for prices and covariates, Energy-Charts the cross-check.
-- Weather needs point locations per zone. Choice pending, log it when made.
+- Weather uses one point per zone, set in the config: Kassel, Paris, Madrid, Luleå, Sundsvall, Stockholm and Malmö (DECISIONS entry 27). One point cannot stand for a whole zone. State it as a limitation, most of all for DE-LU.
+- Run one ENTSO-E download at a time. The downloads share one cache manifest.
+- ENTSO-E can lack a price day while later days are present. On 23 Nov 2026 DE_LU had no price for 20 and 21 Nov and FR none for 21 Nov, although both had 22 Nov (DATA_NOTES, "Raw price format"). `DATA_END` must be a day that is complete in all zones. Energy-Charts values are never used to fill ENTSO-E (DECISIONS entry 7).
 - Energy-Charts now has `/v2` endpoints and lists FR, ES and SE1–SE4 as price zones, all in EUR/MWh. Check the endpoint catalogue before coding.
 - `entsoe-py` 1.0.0: `query_day_ahead_prices` returns hourly values before 1 Oct 2025 and 15-min values after, in one series. Its `resolution` argument is deprecated. Load and wind/solar forecast queries are split by month, so a full pull is several hundred requests.
 - ENTSO-E request URLs carry the token. Never print or log a raw request error.
@@ -124,9 +126,9 @@ What this means:
 - SE1 and SE2 are likely to give near-duplicate results: similar mix and almost the same mean price. Check in the EDA how often their prices are identical. They are cut first for that reason.
 - SE4 has the most solar and no usable solar forecast. State it as a limitation.
 
-Not checked: actual coverage of the `SE_1` to `SE_4` series from 2019 to `DATA_END`. That needs the token, hence the gate.
+Coverage of the `SE_1` to `SE_4` series was measured by the gate. All four zones passed in the runs of 21 and 23 Nov 2026 and stay in M2 (`docs/coverage_gate.md`). The Swedish solar forecast is marked drop, as expected.
 
-Day-1 gate: `python scripts/check_coverage.py` (all 7 zones, 2019 onward, token from `.env`). It caches the raw downloads under `data/raw/entsoe/` and writes `docs/coverage_gate.md`, which is committed. The script's logic was tested on synthetic data only, not against the live API. Rules:
+Day-1 gate: `python scripts/check_coverage.py` (all 7 zones, 2019 onward, token from `.env`). It caches the raw downloads under `data/raw/entsoe/` and writes `docs/coverage_gate.md`, which is committed. The logic lives in `src/epf/data/coverage_gate.py` and has unit tests on synthetic data. It has run against the live API three times, last on 23 Nov 2026. Rules:
 - Prices: at least 99% of market time units present in every year. Days with gaps are counted.
 - Load forecast and wind forecast: present on at least 95% of hours in every year.
 - A forecast column below 95% is dropped for that zone and logged. Expected for Swedish solar.
@@ -200,7 +202,7 @@ The Swedish zones run every model with the hyperparameters and context lengths c
 ├── .env.example              # ENTSOE_API_TOKEN=
 ├── config/config.yaml        # zones, DATA_END, splits, seeds, model revisions
 ├── src/epf/
-│   ├── data/                 # download_*.py, clean.py, validate.py, build_dataset.py
+│   ├── data/                 # download_*.py, market_time.py, resolution.py, clean.py, validate.py, build_dataset.py
 │   ├── features/
 │   ├── models/               # naive.py, stats.py, lgbm.py, chronos2.py, timesfm25.py
 │   ├── evaluation/           # backtest.py, metrics.py
