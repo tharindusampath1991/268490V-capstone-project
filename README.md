@@ -61,7 +61,7 @@ Run these from the repo root once the token is in place. On Linux or macOS, use 
 | Actual load | `.venv\Scripts\python -m epf.data.download_actual_load` | about 75 minutes |
 | Weather forecasts | `.venv\Scripts\python -m epf.data.download_weather` | about 4.5 hours |
 | Price cross-check against Energy-Charts | `.venv\Scripts\python -m epf.data.crosscheck_prices` | about 30 minutes, after the price download |
-| Coverage gate report | `.venv\Scripts\python scripts/check_coverage.py` | reads the saved price and forecast files, writes `docs/coverage_gate.md` |
+| Coverage gate report | `.venv\Scripts\python scripts/check_coverage.py` | about 4 hours on an empty cache. It downloads the price and forecast files that are not saved yet, so it needs the token. Writes `docs/coverage_gate.md` |
 
 - Raw files are saved under `data/raw/`, one Parquet file per dataset, zone and year. Git ignores this folder.
 - Each command prints counts of missing and repeated values. It changes no value.
