@@ -5,11 +5,14 @@ first day. A forecast value therefore names the position of the price it was
 taken from. They use no network and no data files.
 """
 
+from datetime import date
+
 import pandas as pd
 import pytest
 
 from epf.data.market_time import hourly_index, quarter_hour_index
-from epf.models.naive import seasonal_naive
+from epf.evaluation.cutoff import DayInputs
+from epf.models.naive import SeasonalNaive, seasonal_naive
 
 MARKET_TZ = "Europe/Berlin"
 
@@ -132,3 +135,19 @@ def test_negative_prices_pass_through_unchanged():
     forecast = seasonal_naive(prices, target, MARKET_TZ, lag_days=7)
 
     assert forecast.tolist() == pytest.approx([-(hour + 0.5) for hour in range(24)])
+
+
+def test_model_predicts_the_seasonal_naive_forecast_from_the_day_inputs():
+    prices = running_prices("2026-06-20", "2026-07-01")
+    target = targets("2026-07-01", "2026-07-02")
+    inputs = DayInputs(delivery_day=date(2026, 7, 1), target_index=target, prices=prices,
+                       day_ahead=pd.DataFrame(index=prices.index),
+                       delayed=pd.DataFrame(index=prices.index), market_tz=MARKET_TZ)
+    model = SeasonalNaive(lag_days=7)
+
+    model.fit(inputs)
+    forecast = model.predict(inputs)
+
+    assert forecast.tolist() == list(range(96, 120))
+    assert model.name == "naive"
+    assert model.params == {"lag_days": 7}

@@ -13,6 +13,29 @@ from datetime import timedelta
 
 import pandas as pd
 
+from epf.evaluation.cutoff import DayInputs
+
+
+class SeasonalNaive:
+    """The seasonal naive forecast as a model of the backtest. It has nothing to fit."""
+
+    name = "naive"
+
+    def __init__(self, lag_days: int):
+        self.lag_days = lag_days
+
+    @property
+    def params(self) -> dict:
+        """The settings of the model, for the results."""
+        return {"lag_days": self.lag_days}
+
+    def fit(self, inputs: DayInputs) -> None:
+        """Do nothing. The forecast uses no fitted value."""
+
+    def predict(self, inputs: DayInputs) -> pd.Series:
+        """Return the forecast for the market time units of the delivery day."""
+        return seasonal_naive(inputs.prices, inputs.target_index, inputs.market_tz, self.lag_days)
+
 
 def seasonal_naive(prices: pd.Series, target_index: pd.DatetimeIndex, market_tz: str,
                    lag_days: int) -> pd.Series:
