@@ -2,7 +2,7 @@
 # validate.py fails when a built table has other columns or another count.
 #
 # The counts were measured on 2026-11-23 for the period 2019-01-01 to 2026-11-19 and
-# approved by the owner as cleaning rules 1 to 14 (docs/DATA_NOTES.md, "Preprocessing").
+# approved by the owner with the cleaning rules (docs/DATA_NOTES.md, "Preprocessing").
 # Two ES counts were lowered on 2026-11-24, after the download to DATA_END brought one
 # more actual load value. Every gap stays empty. Prices have none. Change a number only
 # by a logged decision.

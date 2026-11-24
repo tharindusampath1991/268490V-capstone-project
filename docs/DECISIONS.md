@@ -193,7 +193,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 
 ## 30. The cleaning step leaves every gap empty
 - Date: 2026-11-23, rules approved by the owner
-- Decision: Inside the data period the cleaning step fills no value, clips none and removes no day. A forecast, load or weather value that is empty or missing in the raw files is empty in the processed tables. Rows after `DATA_END` are removed. Negative prices and spikes stay. The 14 approved rules and their counts are in DATA_NOTES, "Preprocessing". This settles the point left open in entry 19: the ES days without a wind forecast stay empty.
+- Decision: Inside the data period the cleaning step fills no value, clips none and removes no day. A forecast, load or weather value that is empty or missing in the raw files is empty in the processed tables. Rows after `DATA_END` are removed. Negative prices and spikes stay. The approved cleaning rules and their counts are in DATA_NOTES, "Preprocessing". This settles the point left open in entry 19: the ES days without a wind forecast stay empty.
 - Reason: No value is invented, and no rule uses information from after the forecast origin. Whether a model fills an empty input is a modelling choice. It belongs to the feature builder, where it is tested against the leakage cutoff.
 - Alternatives rejected: Filling a forecast from the day before or from seven days earlier. Interpolating between neighbouring hours or days, which uses later values. Dropping the delivery days with a gap, which breaks the daily series. For the weather day 2026-06-24, taking the model run of D-2, which needs a new download rule.
 - Risk: 7 of the 90 ES test days, 6 to 12 November 2026, have no wind and no solar forecast. Results for ES that use these inputs must say so.
