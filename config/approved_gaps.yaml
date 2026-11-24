@@ -3,7 +3,9 @@
 #
 # The counts were measured on 2026-11-23 for the period 2019-01-01 to 2026-11-19 and
 # approved by the owner as cleaning rules 1 to 14 (docs/DATA_NOTES.md, "Preprocessing").
-# Every gap stays empty. Prices have none. Change a number only by a logged decision.
+# Two ES counts were lowered on 2026-11-24, after the download to DATA_END brought one
+# more actual load value. Every gap stays empty. Prices have none. Change a number only
+# by a logged decision.
 DE_LU:
   hourly:
     price: 0
@@ -50,13 +52,13 @@ ES:
     load_forecast: 1
     wind_onshore_forecast: 553
     solar_forecast: 337
-    actual_load: 41
+    actual_load: 40    # 41 before the download of 2026-11-24 (DECISIONS entry 34)
   quarter_hour:
     price: 0
     load_forecast: 0
     wind_onshore_forecast: 1920
     solar_forecast: 864
-    actual_load: 4
+    actual_load: 3     # 4 before the download of 2026-11-24 (DECISIONS entry 34)
   weather:
     temperature_2m: 24
     wind_speed_10m: 24
