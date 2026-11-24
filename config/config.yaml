@@ -54,17 +54,18 @@ open_meteo:
 
 data:
   start: "2019-01-01"   # first delivery day. Quoted so YAML keeps it a string.
-  end: null             # DATA_END. Frozen on Sun 22 Nov 2026, never moved afterwards.
+  end: "2026-11-19"     # DATA_END, the last delivery day. Frozen on Tue 24 Nov 2026
+                        # (DECISIONS entry 29). Never move it.
 
 # Split by time (PROJECT_CONTEXT section 4). The test set is the last test_days delivery
 # days up to data.end, the validation set the validation_days before it, train the rest.
-# The two absolute dates are written when DATA_END is frozen. A test checks that they
-# follow from data.end and the two lengths.
+# The two absolute dates were written when DATA_END was frozen. Never move them. A test
+# checks that they follow from data.end and the two lengths.
 splits:
   test_days: 90
   validation_days: 60
-  validation_start: null
-  test_start: null
+  validation_start: "2026-06-23"   # validation: 2026-06-23 to 2026-08-21
+  test_start: "2026-08-22"         # test: 2026-08-22 to 2026-11-19
 
 # Zones are processed in this order: core first, then extra.
 #   key              ENTSO-E area key used by entsoe-py
