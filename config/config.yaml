@@ -74,10 +74,22 @@ splits:
 eda:
   spike_window_days: 28
   spike_sd: 3
+  # EDA 2 (docs/DECISIONS.md, entries 42 to 49). Conventions, not tuned.
+  median_bins: 20            # equal-count bins of an input for the median price line
+  share_bins: 10             # bins of the residual load for the share of flagged hours
+  solar_day_groups: 3        # groups of delivery days by their solar forecast
+  # A month is in the high-price period when the mean of the core zones' monthly mean
+  # prices is above regime_factor times the median of that monthly series.
+  regime_factor: 2
+  holiday_window_days: 7     # a holiday is compared with the working days this many days before and after it
+  regional_share_edges: [0.25, 0.5]   # groups of regional holidays by share of subdivisions
+  nordic_flow_based_start: "2024-10-30"   # first delivery day of Nordic flow-based market coupling
 
 # Zones are processed in this order: core first, then extra.
 #   key              ENTSO-E area key used by entsoe-py
 #   holiday_country  country code for the `holidays` package
+#   holiday_categories  holiday categories of that package. Nationwide days only
+#                    (docs/DECISIONS.md, entry 46)
 #   energy_charts    Energy-Charts bidding zone (bzn) for the price cross-check. The API
 #                    states the licence of each answer: CC BY 4.0 for DE-LU, FR and SE4,
 #                    private and internal use only for ES, SE1, SE2 and SE3 (2026-11-20).
@@ -88,36 +100,43 @@ eda:
 zones:
   - key: DE_LU
     holiday_country: DE
+    holiday_categories: [public]
     group: core
     energy_charts: DE-LU
     weather_point: {place: Kassel, latitude: 51.32, longitude: 9.50}
   - key: FR
     holiday_country: FR
+    holiday_categories: [public]
     group: core
     energy_charts: FR
     weather_point: {place: Paris, latitude: 48.86, longitude: 2.35}
   - key: ES
     holiday_country: ES
+    holiday_categories: [public]
     group: core
     energy_charts: ES
     weather_point: {place: Madrid, latitude: 40.42, longitude: -3.70}
   - key: SE_1
     holiday_country: SE
+    holiday_categories: [public, de_facto]
     group: extra
     energy_charts: SE1
     weather_point: {place: Luleå, latitude: 65.58, longitude: 22.15}
   - key: SE_2
     holiday_country: SE
+    holiday_categories: [public, de_facto]
     group: extra
     energy_charts: SE2
     weather_point: {place: Sundsvall, latitude: 62.40, longitude: 17.32}
   - key: SE_3
     holiday_country: SE
+    holiday_categories: [public, de_facto]
     group: extra
     energy_charts: SE3
     weather_point: {place: Stockholm, latitude: 59.33, longitude: 18.07}
   - key: SE_4
     holiday_country: SE
+    holiday_categories: [public, de_facto]
     group: extra
     energy_charts: SE4
     weather_point: {place: Malmö, latitude: 55.60, longitude: 13.01}

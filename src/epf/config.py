@@ -1,5 +1,6 @@
 """Load the project configuration from config/config.yaml."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +20,7 @@ class Zone:
     group: str
     energy_charts: str | None = None
     weather_point: dict | None = None
+    holiday_categories: Sequence[str] = ("public",)
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> dict:

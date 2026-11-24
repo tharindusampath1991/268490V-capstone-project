@@ -11,6 +11,7 @@ from epf.config import REPO_ROOT, load_config, ordered_zones
 from epf.data.clean import ENTSOE_NAMES
 from epf.data.market_time import split_starts
 from epf.data.validate import HOURLY, QUARTER_HOUR, WEATHER_TABLE, load_approved_gaps
+from epf.features.holiday_calendar import holiday_dates
 
 
 def zone_entry(key: str, group: str) -> dict:
@@ -97,3 +98,17 @@ def test_project_approved_gaps_cover_every_zone_and_allow_no_empty_price():
         for name in (HOURLY, QUARTER_HOUR):
             assert tables[name]["price"] == 0
             assert not any((zone_key, column) in drops for column in tables[name])
+
+
+def test_project_config_gives_every_zone_holiday_categories_the_package_supports():
+    for zone in ordered_zones(load_config()):
+        days = holiday_dates(zone.holiday_country, zone.holiday_categories, [2026])
+
+        assert "public" in zone.holiday_categories
+        assert days
+
+
+def test_ordered_zones_uses_public_holidays_when_a_zone_names_no_category():
+    zones = ordered_zones({"zones": [zone_entry("A", "core")]})
+
+    assert zones[0].holiday_categories == ("public",)
