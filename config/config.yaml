@@ -16,6 +16,10 @@ paths:
   approved_gaps: config/approved_gaps.yaml
   coverage_report: docs/coverage_gate.md
   figures: reports/figures   # written by the EDA commands, committed
+  results: reports/results   # written by the backtest command, committed
+  # Forecasts per market time unit, with the actual prices beside them. Under data/, which
+  # git ignores. The naive forecast is the ENTSO-E price of 7 days before. Never commit it.
+  forecasts: data/forecasts
   crosscheck_report: docs/price_crosscheck.md
   # Results for zones whose Energy-Charts data is for private and internal use only.
   # Under data/, which git ignores. Never commit this file.
@@ -72,6 +76,12 @@ splits:
 # 12:00 gate closure. Each column of the hourly and the 15-minute table stands under one
 # cut. A column that is listed nowhere stops the run.
 backtest:
+  # Defaults of PROJECT_CONTEXT section 5. They were not tuned. Their tuning belongs to
+  # the first model that trains.
+  refit_every_days: 7             # fit is called on the first scored day and every 7th day after it
+  history_days: null              # days of history a model receives. null: all, from the first row
+  # Models that may be scored on the test days. Every other model is refused there.
+  test_models: [naive]
   price_column: price             # known through the end of D-1
   day_ahead_columns:              # day-ahead forecasts, known through the end of D
     - load_forecast
@@ -80,6 +90,11 @@ backtest:
     - solar_forecast
   delayed_columns:                # known through the end of D-2
     - actual_load
+
+# Model settings, copied into every results row.
+models:
+  naive:
+    lag_days: 7   # the price of the same local market time unit 7 days before. A definition, not tuned.
 
 # EDA 1 (docs/DECISIONS.md, entry 38). An hour is a spike when its price is above the mean
 # plus spike_sd standard deviations of the spike_window_days days before it. Both numbers

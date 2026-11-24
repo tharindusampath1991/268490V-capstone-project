@@ -1,6 +1,7 @@
 """Tests for the config loader. They use no network and no data files."""
 
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -11,6 +12,7 @@ from epf.config import REPO_ROOT, load_config, ordered_zones
 from epf.data.clean import ENTSOE_NAMES
 from epf.data.market_time import split_starts
 from epf.data.validate import HOURLY, QUARTER_HOUR, WEATHER_TABLE, load_approved_gaps
+from epf.evaluation.backtest import build_model
 from epf.evaluation.cutoff import cut_columns
 from epf.features.holiday_calendar import holiday_dates
 
@@ -113,6 +115,22 @@ def test_ordered_zones_uses_public_holidays_when_a_zone_names_no_category():
     zones = ordered_zones({"zones": [zone_entry("A", "core")]})
 
     assert zones[0].holiday_categories == ("public",)
+
+
+def test_project_config_holds_the_backtest_defaults_of_the_forecast_protocol():
+    config = load_config()
+
+    assert config["backtest"]["refit_every_days"] == 7
+    assert config["backtest"]["history_days"] is None
+    assert config["backtest"]["test_models"] == ["naive"]
+    assert build_model(config, "naive").params == {"lag_days": 7}
+
+
+def test_project_config_keeps_the_forecasts_under_the_folder_that_git_ignores():
+    paths = load_config()["paths"]
+
+    assert Path(paths["forecasts"]).parts[0] == "data"
+    assert Path(paths["results"]).parts[0] == "reports"
 
 
 def test_project_config_places_every_approved_column_under_exactly_one_cut():
