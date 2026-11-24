@@ -1,15 +1,21 @@
-"""The time-based split: read a processed table and keep the train delivery days.
+"""The time-based split: the train loader and the range of the validation and test set.
 
 The train set is every delivery day before splits.validation_start
-(PROJECT_CONTEXT section 4). Tables have a UTC index. The cut is defined in
-market time.
+(PROJECT_CONTEXT section 4). The validation set runs from there to
+splits.test_start, and the test set from there to data.end. Tables have a UTC
+index. Every cut is defined in market time.
 """
+
+from datetime import date, timedelta
 
 import pandas as pd
 
 from epf.config import REPO_ROOT
 from epf.data.resolution import check_utc_index
 from epf.data.validate import table_path
+
+VALIDATION = "validation"
+TEST = "test"
 
 
 def train_cut(config: dict) -> pd.Timestamp:
@@ -19,6 +25,25 @@ def train_cut(config: dict) -> pd.Timestamp:
     Output: 00:00 in market time on splits.validation_start.
     """
     return pd.Timestamp(config["splits"]["validation_start"], tz=config["market"]["timezone"])
+
+
+def split_range(config: dict, split: str) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Return the validation or the test set as [start, end) in market time.
+
+    Input: the config dictionary and the split name, VALIDATION or TEST.
+    Output: start is 00:00 on the first delivery day of the split. end is
+        00:00 on the day after its last delivery day. The validation set ends
+        where the test set starts, and the test set ends with data.end.
+    Raises ValueError for any other split name.
+    """
+    market_tz = config["market"]["timezone"]
+    test_start = pd.Timestamp(config["splits"]["test_start"], tz=market_tz)
+    if split == VALIDATION:
+        return train_cut(config), test_start
+    if split == TEST:
+        day_after_end = date.fromisoformat(config["data"]["end"]) + timedelta(days=1)
+        return test_start, pd.Timestamp(day_after_end, tz=market_tz)
+    raise ValueError(f"Unknown split '{split}'. Use {VALIDATION} or {TEST}.")
 
 
 def keep_train(table: pd.DataFrame, cut: pd.Timestamp) -> pd.DataFrame:

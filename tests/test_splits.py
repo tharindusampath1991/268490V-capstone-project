@@ -1,4 +1,4 @@
-"""Tests for the train loader.
+"""Tests for the train loader and the split ranges.
 
 They use small synthetic tables, a temporary folder and no network.
 """
@@ -8,8 +8,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from epf.data.market_time import hourly_index, quarter_hour_index
-from epf.data.splits import keep_train, load_train, train_cut
+from epf.config import load_config
+from epf.data.market_time import delivery_days, hourly_index, quarter_hour_index
+from epf.data.splits import keep_train, load_train, split_range, train_cut
 from epf.data.validate import HOURLY, QUARTER_HOUR, table_path
 
 MARKET_TZ = "Europe/Berlin"
@@ -74,3 +75,41 @@ def test_keep_train_refuses_a_table_whose_index_is_not_utc():
 
     with pytest.raises(ValueError):
         keep_train(table, market_time("2026-06-23"))
+
+
+def split_config() -> dict:
+    """A config with the dates that split_range reads."""
+    return {
+        "market": {"timezone": MARKET_TZ},
+        "data": {"end": "2026-11-19"},
+        "splits": {"validation_start": "2026-06-23", "test_start": "2026-08-22"},
+    }
+
+
+def test_split_range_of_validation_runs_from_validation_start_to_test_start():
+    start, end = split_range(split_config(), "validation")
+
+    assert start == market_time("2026-06-23")
+    assert end == market_time("2026-08-22")
+
+
+def test_split_range_of_test_ends_at_midnight_after_the_last_delivery_day():
+    start, end = split_range(split_config(), "test")
+
+    assert start == market_time("2026-08-22")
+    assert end == market_time("2026-11-20")
+
+
+@pytest.mark.parametrize("split", ["train", "all", ""])
+def test_split_range_refuses_any_other_split(split):
+    with pytest.raises(ValueError, match="split"):
+        split_range(split_config(), split)
+
+
+def test_project_config_splits_hold_the_configured_number_of_delivery_days():
+    config = load_config()
+
+    for split, length in (("validation", "validation_days"), ("test", "test_days")):
+        days = delivery_days(*split_range(config, split))
+
+        assert len(days) == config["splits"][length]
