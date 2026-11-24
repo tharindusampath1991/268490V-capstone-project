@@ -109,6 +109,23 @@ The notebook [notebooks/01_eda_prices.ipynb](notebooks/01_eda_prices.ipynb) call
 .venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_prices.ipynb
 ```
 
+EDA 2 compares the price with its day-ahead inputs, again on the train delivery days only. For the three core zones it covers the price against the load, wind and solar forecast, the 15-minute prices inside the hour, the high-price period of 2021 and 2022, and holidays against working days. Its last figure is one section on the Swedish zones SE_1 to SE_4. They are extra zones and not part of the scope approved in Milestone 1.
+
+```
+.venv\Scripts\python -m epf.eda.driver_figures
+```
+
+- It prints the numbers behind each figure and writes seven PNG files named `eda2_*.png` to `reports/figures/`. It takes about 8 seconds.
+- Residual load is the load forecast minus the wind and the solar forecast (DECISIONS entry 42). The price of a day is never compared with the actual load of that day.
+- Nothing is filled. An hour with an empty input is left out of that comparison, and the command prints how many hours it left out.
+- A holiday is a nationwide public holiday from the `holidays` package (DECISIONS entry 46). Regional holidays count as working days, and the command prints how many days that is.
+
+The notebook [notebooks/01_eda_drivers.ipynb](notebooks/01_eda_drivers.ipynb) calls the same functions and states one finding under each figure. It is committed with its outputs. To run it again from the command line:
+
+```
+.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_drivers.ipynb
+```
+
 ## Environment
 
 - Python 3.12.10, venv + pip, pinned `requirements.txt`.

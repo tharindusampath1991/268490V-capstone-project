@@ -45,6 +45,8 @@ Fill in as they come to exist.
 - Build data: `.venv\Scripts\python -m epf.data.build_dataset` (about 3 seconds once the raw files are saved. Cleans, writes `data/processed/` and validates. `-m epf.data.clean` and `-m epf.data.validate` run one step alone)
 - Price figures: `.venv\Scripts\python -m epf.eda.price_figures` (about 3 seconds, after the build. Core zones, hourly table, train days only. Prints the numbers and writes six PNG files to `reports/figures/`)
 - EDA notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_prices.ipynb` (about 7 seconds. It calls the figure functions and writes no PNG file)
+- Driver figures: `.venv\Scripts\python -m epf.eda.driver_figures` (about 8 seconds, after the build. EDA 2: the price against the load, wind and solar forecast, 15-minute prices, the high-price period and holidays. Core zones first, then one figure for SE_1 to SE_4. Train days only. Prints the numbers and writes seven PNG files to `reports/figures/`)
+- EDA 2 notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_drivers.ipynb` (about 14 seconds. It calls the figure functions and writes no PNG file)
 - Backtest:
 
 ## Commits
