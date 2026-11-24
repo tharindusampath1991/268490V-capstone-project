@@ -381,7 +381,7 @@ def test_run_with_an_empty_forecast_fails_and_writes_nothing(tmp_path):
     config = project_config(tmp_path, data_start="2026-10-17")
     save_tables(config)
 
-    with pytest.raises(SystemExit, match="empty"):
+    with pytest.raises(SystemExit, match="failed checks.*no empty forecast"):
         run(config, "naive", "validation")
 
     assert not Path(config["paths"]["results"]).exists()
