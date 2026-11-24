@@ -29,7 +29,7 @@ def results_path(folder: Path, kind: str, group: str) -> Path:
 def append_rows(path: Path, rows: pd.DataFrame) -> None:
     """Add rows to the end of a CSV file. The file is created when it does not exist."""
     if path.exists():
-        rows = pd.concat([pd.read_csv(path), rows], ignore_index=True)
+        rows = pd.concat([_read(path), rows], ignore_index=True)
     _write(path, rows)
 
 
@@ -40,7 +40,7 @@ def replace_rows(path: Path, rows: pd.DataFrame, keys: list[str]) -> None:
         removed when its key values occur in the new rows. Other saved rows stay.
     """
     if path.exists():
-        saved = pd.read_csv(path)
+        saved = _read(path)
         new_keys = set(rows[keys].itertuples(index=False, name=None))
         keep = [key not in new_keys for key in saved[keys].itertuples(index=False, name=None)]
         rows = pd.concat([saved[keep], rows], ignore_index=True)
@@ -87,6 +87,14 @@ def hardware() -> str:
     return (f"{platform.processor()} | {psutil.cpu_count(logical=False)} cores, "
             f"{psutil.cpu_count()} threads | {memory_gb:.1f} GB RAM | "
             f"{platform.system()} {platform.release()}")
+
+
+def _read(path: Path) -> pd.DataFrame:
+    """Read a results file so that every number comes back exactly as it was written.
+
+    The default parser of pandas can return a number that differs in the last digit.
+    """
+    return pd.read_csv(path, float_precision="round_trip")
 
 
 def _write(path: Path, rows: pd.DataFrame) -> None:

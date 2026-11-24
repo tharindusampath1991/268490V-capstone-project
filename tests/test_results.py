@@ -60,6 +60,31 @@ def test_append_rows_keeps_a_column_that_only_later_rows_have(tmp_path):
     assert saved["coverage"].isna().tolist() == [True, False]
 
 
+# Numbers that the default pandas parser reads back with another last digit.
+LONG_NUMBERS = [62.167291666666664, 0.27784269995754585]
+
+
+def test_append_rows_leaves_the_saved_lines_unchanged_to_the_last_digit(tmp_path):
+    path = tmp_path / "backtest_core.csv"
+    append_rows(path, rows("naive", "ES", LONG_NUMBERS))
+    before = path.read_text().splitlines()
+
+    append_rows(path, rows("naive", "FR", [1.5]))
+
+    assert before[1:] == ["naive,ES,62.167291666666664", "naive,ES,0.27784269995754585"]
+    assert path.read_text().splitlines()[:3] == before
+
+
+def test_replace_rows_leaves_the_kept_lines_unchanged_to_the_last_digit(tmp_path):
+    path = tmp_path / "daily_core.csv"
+    replace_rows(path, rows("naive", "ES", LONG_NUMBERS), KEYS)
+    before = path.read_text().splitlines()
+
+    replace_rows(path, rows("naive", "FR", [1.5]), KEYS)
+
+    assert path.read_text().splitlines()[:3] == before
+
+
 def test_replace_rows_replaces_the_rows_with_the_same_key_and_keeps_the_others(tmp_path):
     path = tmp_path / "daily_core.csv"
     replace_rows(path, rows("naive", "ES", [1.0, 2.0]), KEYS)
