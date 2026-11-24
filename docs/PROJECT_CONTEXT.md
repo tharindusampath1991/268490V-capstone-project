@@ -217,7 +217,8 @@ The Swedish zones run every model with the hyperparameters and context lengths c
 ├── config/config.yaml        # zones, DATA_END, splits, seeds, model revisions
 ├── config/approved_gaps.yaml # approved columns and empty values of the processed tables
 ├── src/epf/
-│   ├── data/                 # download_*.py, market_time.py, resolution.py, clean.py, validate.py, build_dataset.py
+│   ├── data/                 # download_*.py, market_time.py, resolution.py, clean.py, validate.py, build_dataset.py, splits.py
+│   ├── eda/                  # price_stats.py, price_plots.py, price_figures.py (DECISIONS entry 37)
 │   ├── features/
 │   ├── models/               # naive.py, stats.py, lgbm.py, chronos2.py, timesfm25.py
 │   ├── evaluation/           # backtest.py, metrics.py

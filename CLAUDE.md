@@ -43,6 +43,8 @@ Fill in as they come to exist.
 - Price cross-check: `.venv\Scripts\python -m epf.data.crosscheck_prices` (after the price download, about 30 minutes)
 - Coverage gate: `.venv\Scripts\python scripts/check_coverage.py` (first full run: about 4 hours, writes `docs/coverage_gate.md`)
 - Build data: `.venv\Scripts\python -m epf.data.build_dataset` (about 3 seconds once the raw files are saved. Cleans, writes `data/processed/` and validates. `-m epf.data.clean` and `-m epf.data.validate` run one step alone)
+- Price figures: `.venv\Scripts\python -m epf.eda.price_figures` (about 3 seconds, after the build. Core zones, hourly table, train days only. Prints the numbers and writes six PNG files to `reports/figures/`)
+- EDA notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_prices.ipynb` (about 7 seconds. It calls the figure functions and writes no PNG file)
 - Backtest:
 
 ## Commits

@@ -89,6 +89,26 @@ Once the raw files are saved, one command builds the modelling tables:
 
 The rules and the counts are in [docs/DATA_NOTES.md](docs/DATA_NOTES.md), "Preprocessing".
 
+## Exploratory data analysis
+
+EDA 1 covers the prices of the three core zones on the hourly table. It uses the train delivery days only, 2019-01-01 to 2026-06-22. No validation or test day is read.
+
+Once the tables are built, one command writes the figures:
+
+```
+.venv\Scripts\python -m epf.eda.price_figures
+```
+
+- It prints the numbers behind each figure and writes six PNG files to `reports/figures/`: the price distribution, the price by hour of day, by weekday, by year and month, spike hours and negative prices. It takes about 3 seconds.
+- Hours, weekdays and months are counted in market time (Europe/Berlin).
+- An hour is a spike when its price is above the mean plus 3 standard deviations of the 28 days before it (DECISIONS entry 38).
+
+The notebook [notebooks/01_eda_prices.ipynb](notebooks/01_eda_prices.ipynb) calls the same functions, shows each figure and states one finding under it. It is committed with its outputs. To run it again from the command line:
+
+```
+.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_prices.ipynb
+```
+
 ## Environment
 
 - Python 3.12.10, venv + pip, pinned `requirements.txt`.

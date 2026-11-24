@@ -230,3 +230,34 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: `validate.py` and `build_dataset.py` each have a function `run(config)`, and `main()` only calls it with the project config. A path in the config may be absolute.
 - Reason: A test can run the whole command on a temporary folder with a small config, including the exit with an error. The older download commands read the config inside `main()` and have no such test.
 - Alternative rejected: Replacing `load_config` in the tests with `monkeypatch`. The existing tests pass their dependencies as arguments.
+
+## 36. One loader cuts a table to the train set, at 00:00 market time on `splits.validation_start`
+- Date: 2026-11-24, layout approved by the owner
+- Decision: `src/epf/data/splits.py` holds `train_cut`, `keep_train` and `load_train`. `load_train` reads a processed table and keeps the rows before 00:00 Europe/Berlin on `splits.validation_start`, which is 2026-06-22 22:00 UTC. The EDA reads its data only through this loader.
+- Reason: The split is defined in delivery days and the tables have a UTC index. One tested function keeps the two apart, and the backtest will need the same cut. A test checks that no row at or after the cut is returned, on the hourly and on the 15-minute table.
+- Alternatives rejected: A date filter written again in each notebook or figure function. A cut at midnight UTC, which would read the first two hours of delivery day 2026-06-23 as train.
+
+## 37. The EDA code lives in `src/epf/eda/` and the notebook calls it
+- Date: 2026-11-24, layout approved by the owner
+- Decision: `price_stats.py` computes the numbers, `price_plots.py` draws them, and `python -m epf.eda.price_figures` prints the numbers and writes the figures to `reports/figures/` (`paths.figures` in the config). Each figure function returns its tables and its figure. `notebooks/01_eda_prices.ipynb` calls the same functions without a path, so it writes no PNG file. It is run with nbconvert and committed with outputs. EDA 1 covers the core zones, taken from the config by `group: core`, on the hourly table, with train days only. The folder `src/epf/eda/` is new. The layout in PROJECT_CONTEXT §8 now lists it.
+- Reason: Every number has a test on a synthetic frame. The command and the notebook print the same tables, so each number in a finding can be traced to code. Figures come from a command, as CLAUDE.md requires.
+- Alternative rejected: The analysis code inside the notebook. It cannot be tested, and the figures would exist only after a notebook run.
+
+## 38. A spike is a price above the mean plus 3 standard deviations of the 28 days before it
+- Date: 2026-11-24, approved by the owner
+- Decision: An hour is a spike when its price is above the mean of the 672 hourly prices before it plus 3 times their sample standard deviation. Only upward spikes count. Negative prices are counted on their own. The two numbers are in the config as `eda.spike_window_days` and `eda.spike_sd`. They are conventions and were not tuned. The functions are `spike_threshold` and `spike_flags` in `src/epf/eda/price_stats.py`.
+- Reason: Each hour is judged only on hours before it, so every threshold comes from train data and the rule follows the price level. 28 days are four full weeks, so every weekday and hour has the same weight in the window. On the train set the rule flags 486 hours in DE_LU, 493 in FR and 305 in ES, between 0.47% and 0.76% of the 64847 judged hours. DE_LU has 101 spike hours in 2022 and 89 and 100 in 2024 and 2025.
+- Alternatives rejected: One fixed threshold per zone at the 99% quantile of the train prices. It marks the crisis years and not spikes: 619 of its 656 DE_LU hours and 642 of its 654 FR hours fall in 2022, and all 656 ES hours fall in 2021 and 2022. The same rolling rule with median and MAD, which flags 393 ES hours in 2024 at 5 MADs.
+- Limits: The first 672 hours of 2019 have no full window and are not judged. A window that holds an empty price gives no threshold. After a run of very high prices the standard deviation is large, so the hours that follow are judged less strictly. The flag describes the data. It is not a model input.
+
+## 39. The hour and weekday figures show the median and the quartiles, in market time
+- Date: 2026-11-24, figures approved by the owner
+- Decision: `hour_profile` and `weekday_profile` give the median and the 25% and 75% quantiles per hour of day and per weekday in Europe/Berlin. On a 25-hour day both hours 2 count under hour 2, and a 23-hour day has no hour 2. The year and month figure shows the mean. The histograms of the three zones share one price range, the 0.1% and 99.9% quantiles of the train prices of all core zones together, and the command prints how many hours lie outside it.
+- Reason: The tails are long. FR has a maximum of 2987.78 EUR/MWh against a 99% quantile of 510.00, and a mean per hour would follow such values. The daily pattern belongs to the local clock, which is also how delivery days are defined. A monthly mean is the usual way to state a price level.
+- Alternatives rejected: Mean and standard deviation per hour. Profiles by UTC hour, which shift by one hour between winter and summer. A histogram over the full range, where most of the axis would be empty: only 137 DE_LU hours lie below the shared range and 75 above.
+
+## 40. matplotlib and seaborn draw the figures, and nbconvert and ipykernel are pinned without being imported
+- Date: 2026-11-24, packages approved by the owner
+- Decision: `requirements.txt` pins matplotlib 3.11.2, seaborn 0.13.2, nbconvert 7.17.2 and ipykernel 7.4.0. The code imports the first two. seaborn draws the heatmap only. nbconvert and ipykernel are not imported. They run the notebook from the command line, and each has a comment that says so, as pyarrow has (entry 3). The 44 packages they bring in stay unpinned, as entry 3 rules for indirect dependencies.
+- Reason: A fresh clone must be able to run the notebook with one install step. The install changed no existing pin, checked with a dry run first.
+- Alternative rejected: A second requirements file for the notebook tools, which adds an install step to the README for four lines.
