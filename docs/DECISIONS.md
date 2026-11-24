@@ -190,3 +190,43 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: 2026-11-19 is the last delivery day with every price in every zone and no hole before it. ENTSO-E has no DE_LU price for 2026-11-20 and 2026-11-21 and no FR price for 2026-11-21 in the series this project uses. It was asked six times between 2026-11-23 02:55 and 2026-11-24 04:38 market time. The three zone-days stayed empty while the delivery days 22, 23 and 24 November were published.
 - Alternatives rejected: Waiting longer, which had already blocked two plan rows. Filling the three zone-days by calculation, for example with the prices of seven days earlier, and freezing a later day: the price is the target and the days lie in the test set, so the models would be scored against invented values. Filling DE_LU from Energy-Charts, which reverses entry 7 and leaves the FR day empty. Freezing a later day with the three zone-days left empty, which gives every model a broken price history for a gain of three or four days.
 - Note: The 25-hour day 2026-10-25 lies in the test set.
+
+## 30. The cleaning step leaves every gap empty
+- Date: 2026-11-23, rules approved by the owner
+- Decision: Inside the data period the cleaning step fills no value, clips none and removes no day. A forecast, load or weather value that is empty or missing in the raw files is empty in the processed tables. Rows after `DATA_END` are removed. Negative prices and spikes stay. The 14 approved rules and their counts are in DATA_NOTES, "Preprocessing". This settles the point left open in entry 19: the ES days without a wind forecast stay empty.
+- Reason: No value is invented, and no rule uses information from after the forecast origin. Whether a model fills an empty input is a modelling choice. It belongs to the feature builder, where it is tested against the leakage cutoff.
+- Alternatives rejected: Filling a forecast from the day before or from seven days earlier. Interpolating between neighbouring hours or days, which uses later values. Dropping the delivery days with a gap, which breaks the daily series. For the weather day 2026-06-24, taking the model run of D-2, which needs a new download rule.
+- Risk: 7 of the 90 ES test days, 6 to 12 November 2026, have no wind and no solar forecast. Results for ES that use these inputs must say so.
+
+## 31. The cleaning step refuses bad data and repairs nothing
+- Date: 2026-11-23
+- Decision: `clean_zone` in `src/epf/data/clean.py` stops with an error when a raw file has a repeated timestamp, an index that is not UTC or not sorted, a timestamp that is not on the time grid, a column without a name in `ENTSOE_NAMES`, or a saved query that does not cover the data period. For prices it also stops when a market time unit has no price.
+- Reason: The price is the target, so the period must hold exactly one price per market time unit (PROJECT_CONTEXT §3). Picking one of two values, or passing over a missing price, would hide a bad download. This is the repair step that entry 20 left to the cleaning, and the rule chosen is to refuse.
+- Alternative rejected: Keeping the first or the last of repeated values and reporting the count. No raw file has a repeated timestamp, so the rule would only ever act on a download that went wrong.
+
+## 32. The forecast columns the gate marks drop are listed in the config
+- Date: 2026-11-23
+- Decision: `coverage_gate.drop_columns` in the config lists FR `Wind Offshore` and `Solar` for SE_1 to SE_4. The cleaning step leaves these columns out. The list must equal the drop marks in `docs/coverage_gate.md`, and it is compared with the report after each gate run.
+- Reason: The gate wrote its marks only into a Markdown report, which code cannot read. Both columns fail on training years alone: FR has no offshore forecast before 2023 and Sweden no solar forecast in 2019 and 2020. So the choice does not depend on validation or test data.
+- Alternatives rejected: Computing the marks again inside the build, which runs the gate rule in a second place and over the validation and test period. Reading the marks out of the Markdown report.
+
+## 33. Three processed tables per zone, with the weather in its own table
+- Date: 2026-11-23, layout approved by the owner
+- Decision: `python -m epf.data.build_dataset` writes `data/processed/hourly/{ZONE}.parquet` for experiment H, `data/processed/quarter_hour/{ZONE}.parquet` for experiment Q and `data/processed/weather/{ZONE}.parquet`. Each table has a UTC index with a row for every time step of its period, also where all values are empty. The columns are `price`, `load_forecast`, `wind_onshore_forecast`, `wind_offshore_forecast`, `solar_forecast` and `actual_load`, minus the columns a zone does not have. The weather table keeps the four variables as downloaded and the run time in `run`.
+- Reason: One file per zone and experiment is what a model reads. A full time grid makes a gap visible as an empty value and lets the validation count it. Weather starts in March 2024, so inside the main tables its columns would be empty for five years. Weather is hourly and kept off the 15-minute grid, because repeating or interpolating it is a feature choice, not a cleaning rule.
+- Alternatives rejected: Weather columns inside the main tables. One long table for all zones. The ENTSO-E column names, which contain spaces and do not say that a column is a forecast.
+- Limits: `actual_load` stands at its own delivery time. A forecast for day D may use it through D-2 only, and the feature builder applies that cut. `shortwave_radiation` is the mean of the hour before its timestamp, while the ENTSO-E values apply from their timestamp on. The feature builder must line them up.
+
+## 34. The validation compares each column with an approved number of empty values
+- Date: 2026-11-23, approved by the owner
+- Decision: `config/approved_gaps.yaml` holds, per zone, table and column, the number of empty values that was approved with the cleaning rules. `validate.py` fails when a table has other columns or when a count differs in either direction. It also checks the index against the time grid, the length of every delivery day and the last delivery day.
+- Reason: The snapshot is frozen. If a later download changes how many values exist, the build stops and the change is looked at before any model sees it. The same file gives the expected columns per zone.
+- Alternatives rejected: A threshold such as "at most 1% empty", which lets a new gap pass. A list of every empty timestamp, which is exact but several thousand lines long.
+- Limit: A count notices a changed number of gaps. It does not notice a gap that moves to another hour while the count stays the same.
+- Changed on 2026-11-24, approved by the owner: the counts of ES `actual_load` went from 41 to 40 in the hourly table and from 4 to 3 in the 15-minute table. The download to `DATA_END` brought the missing quarter-hour of 2026-11-17 05:00 UTC, and the validation stopped the first build on that difference. No other count changed.
+
+## 35. The validate and build commands take the config as an argument
+- Date: 2026-11-23
+- Decision: `validate.py` and `build_dataset.py` each have a function `run(config)`, and `main()` only calls it with the project config. A path in the config may be absolute.
+- Reason: A test can run the whole command on a temporary folder with a small config, including the exit with an error. The older download commands read the config inside `main()` and have no such test.
+- Alternative rejected: Replacing `load_config` in the tests with `monkeypatch`. The existing tests pass their dependencies as arguments.

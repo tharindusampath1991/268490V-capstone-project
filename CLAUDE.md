@@ -42,7 +42,7 @@ Fill in as they come to exist.
 - Download weather: `.venv\Scripts\python -m epf.data.download_weather` (first full run: about 4.5 hours and about 6900 of the 10000 Open-Meteo calls allowed per day)
 - Price cross-check: `.venv\Scripts\python -m epf.data.crosscheck_prices` (after the price download, about 30 minutes)
 - Coverage gate: `.venv\Scripts\python scripts/check_coverage.py` (first full run: about 4 hours, writes `docs/coverage_gate.md`)
-- Build data:
+- Build data: `.venv\Scripts\python -m epf.data.build_dataset` (about 3 seconds once the raw files are saved. Cleans, writes `data/processed/` and validates. `-m epf.data.clean` and `-m epf.data.validate` run one step alone)
 - Backtest:
 
 ## Commits

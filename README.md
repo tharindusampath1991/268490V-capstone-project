@@ -71,6 +71,24 @@ Run these from the repo root once the token is in place. On Linux or macOS, use 
 
 The measured results of each run are in [docs/DATA_NOTES.md](docs/DATA_NOTES.md).
 
+## Build the data
+
+The data period is frozen: delivery days 2019-01-01 to 2026-11-19 (`data.end` in `config/config.yaml`). Validation is 2026-06-23 to 2026-08-21 and test is 2026-08-22 to 2026-11-19. The download commands above stop at that day.
+
+Once the raw files are saved, one command builds the modelling tables:
+
+```
+.venv\Scripts\python -m epf.data.build_dataset
+```
+
+- It cleans the raw files, writes three tables per zone under `data/processed/` and validates them. It takes about 3 seconds.
+- `hourly/{ZONE}.parquet` is the hourly table, `quarter_hour/{ZONE}.parquet` the 15-minute table from 2025-10-01, and `weather/{ZONE}.parquet` the weather forecasts from 2024-03-15.
+- No value is filled. A gap in a forecast stays empty, and prices have no gap.
+- The command ends with an error when a table differs from `config/approved_gaps.yaml`, which holds the approved columns and gaps.
+- `.venv\Scripts\python -m epf.data.clean` and `.venv\Scripts\python -m epf.data.validate` run the first and the last step alone.
+
+The rules and the counts are in [docs/DATA_NOTES.md](docs/DATA_NOTES.md), "Preprocessing".
+
 ## Environment
 
 - Python 3.12.10, venv + pip, pinned `requirements.txt`.

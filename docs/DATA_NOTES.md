@@ -219,3 +219,121 @@ Run over the raw files of 2026-11-22, delivery days 2019-01-01 to 2026-11-21. Th
 - Forecasts: in every zone and column, every hour with data holds either one value at minute 0 or four values. No hour holds two or three. On this data the aligned hourly value is therefore equal to the plain hourly mean that the coverage gate uses. The largest difference is 0.0.
 - The rule works per hour because files change resolution. The FR load forecast, for example, has 52585 hours with one value and 16583 hours with four.
 - On the 15-minute grid from 2025-10-01, DE_LU and ES have 15-minute forecasts throughout, so no value is repeated. FR and the Swedish zones are hourly for part of that period. The FR `Solar` forecast has 32804 raw values there and 39932 after repetition. The Swedish load forecast has 35473 and 39940.
+
+## Preprocessing
+
+Code: `src/epf/data/clean.py`, `src/epf/data/validate.py` and `src/epf/data/build_dataset.py` (DECISIONS entries 29 to 35). One command rebuilds the tables from the raw cache:
+
+    .venv\Scripts\python -m epf.data.build_dataset
+
+It cleans the raw files, writes the tables under `data/processed/` and validates them. `python -m epf.data.clean` and `python -m epf.data.validate` run the first and the last step alone. All three stop with a message when `data.end` is not set.
+
+### Period and splits
+
+`DATA_END` was frozen on 2026-11-24 at delivery day 2026-11-19 (DECISIONS entry 29). ENTSO-E was asked six times between 2026-11-23 02:55 and 2026-11-24 04:38 market time. It had no DE_LU price for 2026-11-20 and 2026-11-21 and no FR price for 2026-11-21 each time, while it published the delivery days 22, 23 and 24 November.
+
+| Split | Delivery days | Count |
+|---|---|---|
+| Train, experiment H | 2019-01-01 to 2026-06-22 | 2730 |
+| Train, experiment Q | 2025-10-01 to 2026-06-22 | 265 |
+| Train, weather sub-experiment | 2024-03-15 to 2026-06-22 | 830 |
+| Validation | 2026-06-23 to 2026-08-21 | 60 |
+| Test | 2026-08-22 to 2026-11-19 | 90 |
+
+The 25-hour day 2026-10-25 lies in the test set.
+
+### Download to `DATA_END`
+
+On 2026-11-24, with `data.end` set, the 2026 file of every dataset and zone was downloaded again. The files of earlier years were read from the cache.
+
+- Prices: 7 files in 236 seconds. Each has 31008 of 31008 values, with no price at an unexpected time and no repeated timestamp.
+- Load forecast and wind and solar forecast: 14 files in 958 seconds. Missing hours in 2026: ES 480 for `Wind Onshore` and 216 for `Solar`, FR 25 for `Solar` and `Wind Onshore` and 1 for `Wind Offshore`, each Swedish zone 72 for `Wind Onshore` and `Solar`. No repeated timestamp.
+- Actual load: 7 files in 420 seconds. No hour of 2026 is without a value.
+- Weather: 7 files in 5095 seconds, 323 runs and 7752 rows per zone. `temperature_2m` and `wind_speed_10m` are empty for the 24 hours of 2026-06-24 in every zone. Nothing else is missing.
+- Every 2026 entry in the three manifests now has the query end 2026-11-19 23:00 UTC: 28 in `entsoe`, 7 in `open_meteo` and 7 in `energy_charts`.
+- Price cross-check, run again: 56 zone-years and 693021 compared prices. No pair differs by more than 0.01 EUR/MWh and neither source has a timestamp the other lacks. `docs/price_crosscheck.md` did not change, because it already covered 2019-01-01 to 2026-11-19.
+- Coverage gate, run again: `docs/coverage_gate.md` now covers 2019-01-01 to 2026-11-19. SE_1 to SE_4 pass. No verdict and no keep or drop mark changed. ES `Wind Onshore` is at 93.81% in 2026.
+- One value changed against the files of 2026-11-22: the ES actual load for the hour 2026-11-17 05:00 UTC now has all four quarter-hour values. It had three.
+
+### Cleaning rules
+
+The owner approved these rules on 2026-11-23 (DECISIONS entries 30 and 31). No rule fills, clips or removes a value inside the period. Negative prices and spikes stay. No statistic is computed from validation or test data.
+
+| Rule | What the cleaning step does |
+|---|---|
+| Index | Refuses a file whose index is not UTC, not sorted or repeats a timestamp. No raw file repeats one |
+| Period | Removes rows outside 2019-01-01 to 2026-11-19. Weather starts on 2024-03-15 |
+| Grid | Refuses a value at a time that is not on the time grid of its dataset |
+| Prices | Refuses a zone that does not have exactly one price per market time unit |
+| Dropped columns | Leaves out FR `Wind Offshore` and the `Solar` forecast of SE_1 to SE_4, the columns the gate marks drop (`coverage_gate.drop_columns`) |
+| Names | Renames `Forecasted Load`, `Wind Onshore`, `Wind Offshore`, `Solar` and `Actual Load` to `load_forecast`, `wind_onshore_forecast`, `wind_offshore_forecast`, `solar_forecast` and `actual_load` |
+| Gaps | Leaves every empty or missing value empty |
+
+Counts from `python -m epf.data.clean` on 2026-11-24, in values that are not empty:
+
+- Outside the period: 0 in every dataset and zone, because the raw files now end on `DATA_END`.
+- Dropped columns: 51501 values of FR `Wind Offshore` and 69048 values of `Solar` in each Swedish zone.
+- Prices kept: 99003 per zone, one for each market time unit of the period.
+
+### Tables
+
+`build_dataset` writes 21 Parquet files, about 23 MB in total, in 3 seconds. Every table has a UTC index and one row per time step, also where all values are empty.
+
+| Table | File | Time step | First delivery day | Rows per zone |
+|---|---|---|---|---|
+| Experiment H | `data/processed/hourly/{ZONE}.parquet` | 1 hour | 2019-01-01 | 69120 |
+| Experiment Q | `data/processed/quarter_hour/{ZONE}.parquet` | 15 minutes | 2025-10-01 | 39844 |
+| Weather | `data/processed/weather/{ZONE}.parquet` | 1 hour | 2024-03-15 | 23520 |
+
+- Columns of the H and Q tables: `price` in EUR/MWh, then `load_forecast`, `wind_onshore_forecast`, `wind_offshore_forecast`, `solar_forecast` and `actual_load` in MW. DE_LU has all six. FR and ES have no `wind_offshore_forecast`. The Swedish zones have neither `wind_offshore_forecast` nor `solar_forecast`.
+- Experiment H: `hourly_prices` and `align_to_hours`. From 2025-10-01 the price of an hour is the mean of its four quarter-hour prices.
+- Experiment Q: `quarter_hour_prices` and `align_to_quarter_hours`. An hourly forecast value is repeated on its four quarter-hours.
+- Weather columns: `temperature_2m`, `wind_speed_10m`, `wind_speed_100m`, `shortwave_radiation` and `run`, as downloaded. `run` is the start time of the model run. Weather is not put on the 15-minute grid.
+- `actual_load` stands at its own delivery time. A forecast for delivery day D may use it through D-2 only (PROJECT_CONTEXT §5). The feature builder must apply that cut.
+- `shortwave_radiation` is the mean of the hour before its timestamp. The ENTSO-E values apply from their timestamp on. The feature builder must line them up.
+
+### Gaps that stay empty
+
+Counts from the build of 2026-11-24. 48 of the 99 table columns have at least one empty value. `price` has none in any zone or table. `config/approved_gaps.yaml` holds the count of every column, and the validation fails when a built table differs (DECISIONS entry 34).
+
+| Zone | Column | Hourly table: empty hours (train, validation, test) | 15-minute table: empty quarter-hours (train, validation, test) |
+|---|---|---|---|
+| DE_LU | `load_forecast` | 50 (50, 0, 0) | 0 |
+| DE_LU | `solar_forecast` | 3 (3, 0, 0) | 4 (4, 0, 0) |
+| DE_LU | `wind_onshore_forecast` | 3 (3, 0, 0) | 4 (4, 0, 0) |
+| FR | `solar_forecast` | 377 (376, 0, 1) | 104 (100, 0, 4) |
+| FR | `wind_onshore_forecast` | 351 (350, 0, 1) | 104 (100, 0, 4) |
+| FR | `actual_load` | 50 (50, 0, 0) | 15 (15, 0, 0) |
+| ES | `load_forecast` | 1 (1, 0, 0) | 0 |
+| ES | `solar_forecast` | 337 (169, 0, 168) | 864 (192, 0, 672) |
+| ES | `wind_onshore_forecast` | 553 (385, 0, 168) | 1920 (1248, 0, 672) |
+| ES | `actual_load` | 40 (39, 0, 1) | 3 (1, 0, 2) |
+| SE_1 to SE_4, each | `load_forecast` | 24 (24, 0, 0) | 96 (96, 0, 0) |
+| SE_1 to SE_4, each | `wind_onshore_forecast` | 216 (192, 24, 0) | 480 (384, 96, 0) |
+
+In the weather table of every zone, `temperature_2m` and `wind_speed_10m` are empty for the 24 hours of 2026-06-24, which lies in the validation set.
+
+What the gaps are:
+
+- ES `wind_onshore_forecast`: 24 delivery days, 23 of them without any value. 20 are the days of 2026 named under "Coverage gate results". The other four are 2020-01-05, 2022-10-30, 2024-06-02 and 2025-03-31.
+- ES `solar_forecast`: 15 delivery days: 2022-10-30, 2024-12-07 to 2024-12-11, 2026-06-11, 2026-06-16 and 2026-11-06 to 2026-11-12.
+- So 7 of the 90 ES test days, 6 to 12 November 2026, have no wind and no solar forecast. Results for ES that use these inputs must say so.
+- FR `solar_forecast` and `wind_onshore_forecast`: 23 and 22 delivery days from 2019 to 2026. The one empty hour in the test set is on the clock-change day 2026-10-25.
+- DE_LU `solar_forecast` and `wind_onshore_forecast`: one hour on each of the clock-change days 2023-10-29, 2024-10-27 and 2025-10-26. DE_LU `load_forecast`: 2022-02-22 and 2022-03-24 without any value, and one hour on 2023-10-29 and on 2024-10-27.
+- Swedish `wind_onshore_forecast`: the same 9 whole days in all four zones: 2019-04-15, 2022-08-17, 2022-11-20, 2025-05-12, 2025-11-01, 2025-11-02, 2026-03-11, 2026-04-29 and 2026-06-26. The last one lies in the validation set. Swedish `load_forecast`: 2025-12-04.
+- `actual_load`: FR has 48 hours without a value and 2 partly filled hours. ES has 35 hours without a value, on 2025-04-28 and 2025-04-29, and 5 partly filled hours. A partly filled hour is empty in the hourly table (DECISIONS entry 22). In the 15-minute table its values stay at their own time. The one in the test set is 2026-10-25 00:00 UTC.
+- The counts of ES `actual_load` were 41 and 4 when the rules were approved on 2026-11-23. The download to `DATA_END` brought the missing value of 2026-11-17 05:00 UTC. The validation stopped the first build on that difference, and the owner approved 40 and 3 on 2026-11-24.
+
+### Validation
+
+`validate.py` checks every table. A failed check ends the command with an error.
+
+| Check | Rule |
+|---|---|
+| Index | Exactly the time steps of the period, in UTC, each once |
+| Day length | Every delivery day has 24, 23 or 25 hours, or 96, 92 or 100 quarter-hours, as its date requires |
+| End | No time step after delivery day 2026-11-19 |
+| Columns | The columns listed for the zone in `config/approved_gaps.yaml` |
+| Gaps | Per column exactly the approved number of empty values |
+
+Result of 2026-11-24: all 21 tables pass. The tests use synthetic frames for a 23-hour day (2026-03-29), the 25-hour day 2026-10-25, the switch day 2025-10-01 and the `DATA_END` cutoff.
