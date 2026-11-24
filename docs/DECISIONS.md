@@ -261,3 +261,10 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: `requirements.txt` pins matplotlib 3.11.2, seaborn 0.13.2, nbconvert 7.17.2 and ipykernel 7.4.0. The code imports the first two. seaborn draws the heatmap only. nbconvert and ipykernel are not imported. They run the notebook from the command line, and each has a comment that says so, as pyarrow has (entry 3). The 44 packages they bring in stay unpinned, as entry 3 rules for indirect dependencies.
 - Reason: A fresh clone must be able to run the notebook with one install step. The install changed no existing pin, checked with a dry run first.
 - Alternative rejected: A second requirements file for the notebook tools, which adds an install step to the README for four lines.
+
+## 41. The month panels of the spike and negative price figures show the mean per year
+- Date: 2026-11-24, decided by the owner
+- Decision: In `eda1_spikes.png` and `eda1_negative_prices.png` the month panel shows the flagged hours of a month divided by the number of years in which that month has a judged hour. The function is `month_means` in `src/epf/eda/price_stats.py`. The command still prints the raw count per month and the number of years beside the mean. The year panel and the hour panel show counts.
+- Reason: The train set ends on 2026-06-22. January to June occur in eight years and July to December in seven, so a raw count favours the first half of the year. In DE_LU the negative hours of May are 416 in eight years, a mean of 52.00, and those of December 177 in seven years, a mean of 25.29.
+- Alternative rejected: The raw count per month with a note under the figure. It matches the printed counts one to one, but the months cannot be compared.
+- Limit: A month that is only partly in the data counts as one year. June 2026 ends on the 22nd, and for spikes January 2019 is judged only after its first 28 days. The means of June and of January are therefore slightly low.
