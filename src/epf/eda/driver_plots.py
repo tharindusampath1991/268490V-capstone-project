@@ -148,7 +148,7 @@ def plot_quarter_hours(spreads: dict[str, pd.DataFrame], quarters: dict[str, pd.
     axes[0][0].set_ylabel(f"Highest minus lowest price\nin the hour, {UNIT}")
     axes[1][0].set_ylabel(f"Median difference from\nthe hourly mean, {UNIT}")
     axes[0][0].legend(frameon=False, fontsize=8, loc="upper left")
-    axes[1][0].legend(frameon=False, fontsize=8, loc="best", ncols=2)
+    axes[1][-1].legend(frameon=False, fontsize=8, loc="upper right", ncols=2)
     return _finish(figure, "15-minute prices inside the hour, train period", path, note)
 
 
@@ -174,7 +174,7 @@ def plot_regime(profiles: dict[str, pd.DataFrame], medians: dict[str, dict[str, 
         bottom.set_xlabel(f"{INPUT_LABELS[RESIDUAL]}, GW")
     axes[0][0].set_ylabel(f"Median price, {UNIT}")
     axes[1][0].set_ylabel(f"Median price per bin, {UNIT}")
-    axes[0][0].legend(frameon=False, fontsize=8, loc="upper left")
+    axes[1][0].legend(frameon=False, fontsize=8, loc="upper left")
     return _finish(figure, "Price before, in and after the high-price period, train period",
                    path, note)
 
