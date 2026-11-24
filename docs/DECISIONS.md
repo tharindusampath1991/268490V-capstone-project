@@ -8,6 +8,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: To extend the scope a little beyond the three approved zones. A zone is added through a config entry and runs through the same pipeline, so the Swedish zones add no technical difficulty.
 - Alternatives rejected: SE3 only. Sweden after M2.
 - Risks: Milestone 1 was approved with 3 zones. Seven zones with 14 days to M2.
+- Update, 2026-11-24: SE1 to SE4 are core zones from this day (entry 59). The sentence "with no zone-specific tuning or features" now means one setting per model for all seven zones.
 
 ## 2. Python 3.12 in `.venv`
 - Date: 2026-11-20
@@ -243,6 +244,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: `price_stats.py` computes the numbers, `price_plots.py` draws them, and `python -m epf.eda.price_figures` prints the numbers and writes the figures to `reports/figures/` (`paths.figures` in the config). Each figure function returns its tables and its figure. `notebooks/01_eda_prices.ipynb` calls the same functions without a path, so it writes no PNG file. It is run with nbconvert and committed with outputs. EDA 1 covers the core zones, taken from the config by `group: core`, on the hourly table, with train days only. The folder `src/epf/eda/` is new. The layout in PROJECT_CONTEXT §8 now lists it.
 - Reason: Every number has a test on a synthetic frame. The command and the notebook print the same tables, so each number in a finding can be traced to code. Figures come from a command, as CLAUDE.md requires.
 - Alternative rejected: The analysis code inside the notebook. It cannot be tested, and the figures would exist only after a notebook run.
+- Update, 2026-11-24: The core group holds seven zones from this day, so EDA 1 covers SE_1 to SE_4 too (entries 59 and 60).
 
 ## 38. A spike is a price above the mean plus 3 standard deviations of the 28 days before it
 - Date: 2026-11-24, approved by the owner
@@ -256,6 +258,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: `hour_profile` and `weekday_profile` give the median and the 25% and 75% quantiles per hour of day and per weekday in Europe/Berlin. On a 25-hour day both hours 2 count under hour 2, and a 23-hour day has no hour 2. The year and month figure shows the mean. The histograms of the three zones share one price range, the 0.1% and 99.9% quantiles of the train prices of all core zones together, and the command prints how many hours lie outside it.
 - Reason: The tails are long. FR has a maximum of 2987.78 EUR/MWh against a 99% quantile of 510.00, and a mean per hour would follow such values. The daily pattern belongs to the local clock, which is also how delivery days are defined. A monthly mean is the usual way to state a price level.
 - Alternatives rejected: Mean and standard deviation per hour. Profiles by UTC hour, which shift by one hour between winter and summer. A histogram over the full range, where most of the axis would be empty: only 137 DE_LU hours lie below the shared range and 75 above.
+- Update, 2026-11-24: With seven core zones the shared range is -33.77 to 629.38, and 288 DE_LU hours lie below it and 135 above (entry 60). The numbers above are those of the three zones DE_LU, FR and ES.
 
 ## 40. matplotlib and seaborn draw the figures, and nbconvert and ipykernel are pinned without being imported
 - Date: 2026-11-24, packages approved by the owner
@@ -289,6 +292,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: 65519 points per panel hide each other in a scatter plot, and a random sample would make the figure depend on a seed. Bins by quantile hold enough hours everywhere and read the same way in zones of different size.
 - Alternatives rejected: A scatter plot of a random sample. Bins with fixed MW edges, which cannot be shared between zones.
 - Limits: Many hours have a solar forecast of zero, so the lowest solar bins merge: DE_LU has 12 bins and FR 11 instead of 20. The price range of the panels is the shared range of EDA 1 (entry 39), -55.64 to 678.27. The spike share of a bin is taken over all its hours, also the first 672 hours that the spike rule does not judge. A day with an empty solar hour is left out of the solar groups: 3 days in DE_LU, 22 in FR and 8 in ES.
+- Update, 2026-11-24: The price range of the panels is now -33.77 to 629.38 (entry 60). The Swedish zones have no solar forecast, so they are not in the solar groups.
 
 ## 45. The high-price period is 2021-09 to 2022-12, from one rule on the monthly mean of the core zones
 - Date: 2026-11-24, approved by the owner
@@ -296,6 +300,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: The rule uses train prices only and gives one period, so the three zones are compared on the same months. It puts the start in autumn 2021, when prices were already far above the earlier level.
 - Alternatives rejected: Calendar year 2022, which leaves out the last months of 2021. The DE_LU monthly mean was about 221 in December 2021. One period per zone by the same rule, which gave three different periods and marked FR months up to February 2025.
 - Limits: The end is a close call. February 2023 has 136.85, just under the threshold. June 2026 counts as a month although the train set ends on the 22nd. The period describes the data. It is not a model input, and no fuel price is in scope to explain it.
+- Update, 2026-11-24: The rule now averages the seven core zones. It gives the same period, 2021-09 to 2022-12, with a median of 50.80 and a threshold of 101.60. 15 of the 16 months are above the threshold. The end is no longer a close call: the highest month outside is February 2023 with 95.55 (entry 60).
 
 ## 46. A holiday is a nationwide public holiday, and regional holidays are measured, not used
 - Date: 2026-11-24, approved by the owner, who chose the second of three options for regional holidays
@@ -316,6 +321,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: PROJECT_CONTEXT §1 asks for one combined section and §3.1 for the share of identical SE_1 and SE_2 prices. Exact equality alone would mislead. SE_1 and SE_2 had the same price in 98.61% of the hours before 2024-10-30 and in 3.41% from that day, yet their median absolute difference from that day is 1.23 EUR/MWh.
 - Alternatives rejected: A tolerance such as 1 EUR/MWh as the meaning of identical, which is one more threshold to defend. A figure of the price levels in EUR side by side, since the levels differ several-fold (PROJECT_CONTEXT §7).
 - Limits: No holiday, high-price period or 15-minute analysis for Sweden. The yearly ratio uses the plain mean of the four zones, not a Swedish price weighted by load.
+- Update, 2026-11-24: The first limit is gone. Every section of EDA 2 covers the Swedish zones, except the solar section (entry 60). The figure is no longer labelled as extra zones, and `sweden` takes its zones from `eda.neighbour_zones` in the config instead of the extra group.
 
 ## 49. EDA 2 keeps the layout of EDA 1, and `holidays` is pinned without `python-dateutil`
 - Date: 2026-11-24, layout and package approved by the owner
@@ -361,6 +367,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Alternative rejected: Replacing the row of an earlier run in the log as well. The file would always show one row per result, but a repeated test run would leave no trace.
 - Correction, 2026-11-24: The first version read the saved files with the default pandas parser, which can return a number with another last digit. The test run therefore rewrote 273 saved validation cells, with a largest relative change of 8.0e-16. No printed number changed. The files are now read with `float_precision="round_trip"`, a test compares the saved lines as text, and the validation lines were restored from commit `762243f`. The test command was not run again. The body of commit `5cf0e37` says the validation rows were unchanged, which was wrong in the last digit.
 - Limits: `results.py` is a file beyond the layout of the first plan. Error slices by hour or by spike need the forecast files, which exist only where the command has run.
+- Update, 2026-11-24: All seven zones are in the core group, so there is one `backtest_core.csv` and one `daily_core.csv`. The two extra files were merged into them and removed (entry 61).
 
 ## 55. Run time is read with `perf_counter` and peak memory with psutil, which is now pinned
 - Date: 2026-11-24, package approved by the owner
@@ -387,3 +394,26 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: CLAUDE.md says the test set is touched only by the final backtest. A list in the config makes opening the test days for a model a visible, logged change instead of a habit.
 - Alternative rejected: Relying on the rule in words only.
 - Limit: The list guards the backtest command. It does not stop other code from reading the processed tables, which hold the test days.
+
+## 59. SE_1 to SE_4 are core zones
+- Date: 2026-11-24, decided by the owner
+- Decision: The four Swedish zones have `group: core` in the config, like DE_LU, FR and ES. Every analysis, model and results table covers all seven zones. Three earlier rules end with this. First, the EDA no longer gives Sweden one section only. Second, hyperparameters, history length and context lengths are chosen on the validation days of all seven zones, one setting per model, instead of on DE_LU, FR and ES alone. Third, Swedish work is no longer the first thing cut if M2 is at risk. The group in the config does not say what Milestone 1 approved: it approved DE_LU, FR and ES only, and README, CLAUDE.md, PROJECT_CONTEXT and both notebooks say so.
+- Reason: The owner wants the Swedish zones analysed, tuned and reported to the same depth as the other three.
+- Alternatives rejected by the owner: The same analysis for Sweden with the two groups kept, which would have left the existing figures, numbers and results files unchanged. Tuning on DE_LU, FR and ES only. Keeping the cut order.
+- Risks: Milestone 1 was approved with 3 zones, and the supervisor has not been told (PROJECT_CONTEXT §11). M2 is assumed on 3 Dec 2026, SARIMA or ETS, LightGBM and the zero-shot models are still open, and no Swedish item can be cut any more. Validation runs take about 2.3 times as long as with three zones, by the estimate in PROJECT_CONTEXT §3.1. SE_1 and SE_2 are near-duplicates (entry 48), so seven zones are not seven independent results. The Swedish zones have no solar forecast (entry 32), so they enter the same tuning with one input fewer.
+- Limit: "One setting per model" is how the tuning rule was written down from the owner's answer "tune on all seven". No setting per zone was asked for.
+
+## 60. What changed in the EDA with seven core zones
+- Date: 2026-11-24
+- Decision: Both EDA commands and notebooks cover all seven zones. A figure with one panel per zone starts a new row after four zones (`MAX_COLUMNS` in `price_plots.py`). A figure with several panels per zone has one row per zone, where it had one column per zone before. The values that are pooled over the core zones now come from seven zones: the shared price range is -33.77 to 629.38 (entry 39), and the high-price period is still 2021-09 to 2022-12, with a threshold of 101.60 (entry 45). The solar section holds DE_LU, FR and ES only. The Sweden section stays as the comparison of the four zones with each other, and reads its zones from the new config key `eda.neighbour_zones`.
+- Reason: Seven panels in one row gave a figure of 29 inches, which cannot be read in a notebook. One rule for the pooled values keeps every zone in the same figure on the same scale. `eda.neighbour_zones` keeps zone names out of the code now that no zone is in the extra group.
+- Alternative rejected: A second set of figures for Sweden beside the unchanged figures of the three zones. It was the option the owner declined in entry 59.
+- What the Swedish zones show, on the train days: The median price is 25.99 in SE_1, 26.29 in SE_2, 38.10 in SE_3 and 46.66 in SE_4. The spike rule of entry 38 flags 2.60%, 2.63%, 1.74% and 1.23% of the judged hours, against 0.47% to 0.76% in the other zones. Negative prices are 2.30% to 2.97% of the hours, with at most 29 a year up to 2022 and 368 to 434 in 2023. The rank correlation of the price with the residual load is 0.49, 0.56, 0.54 and 0.47. In the negative hours the wind forecast is a median of 89.99% of the load forecast in SE_1 and 162.38% in SE_2. The median spread inside an hour is 4.73, 4.65, 7.89 and 9.09. A holiday on a weekday is a median of 4.43 lower than the working days around it in SE_1 and SE_2 and about 11 lower in SE_3 and SE_4.
+- Limits: The spike rule measures a jump against the last 28 days, so it flags more hours in zones with a low and quiet price. That is a guess at the cause, not a tested result. The solar guess of EDA 1 cannot be tested for Sweden. The Swedish holiday count depends on the categories `public` and `de_facto` (entry 46). The numbers of DE_LU, FR and ES are unchanged, except where a pooled value enters: the hours outside the shared price range and the threshold of the high-price period.
+
+## 61. The Swedish naive results were moved into the core results files as text
+- Date: 2026-11-24, approved by the owner
+- Decision: The 16 lines of SE_1 to SE_4 in `backtest_extra.csv` and the 1200 lines in `daily_extra.csv` were copied into `backtest_core.csv` and `daily_core.csv` as text. In the 16 backtest lines the `group` cell changed from extra to core. No other cell changed, and no backtest was run again. The lines are in the order a run with seven core zones writes them. The two extra files were removed with `git rm`.
+- Reason: From now on the backtest writes all seven zones to the core files. The naive forecast is the reference for relative MAE, so its Swedish rows must be in the same file as the models compared with it. The naive test run may not be repeated (entry 50).
+- Alternatives rejected by the owner: Leaving the two files as they were, so that later tables read both. Running validation and test again, which would have been a second test run.
+- Limits: The `group` cell of these 16 rows no longer shows the group the zones had when the runs were made. The run time stamp does: the runs are of 2026-11-24, before the change, and entry 59 gives the date. `docs/coverage_gate.md` still lists SE_1 to SE_4 as extra zones with a verdict. It is the report of 24 Nov 2026 and is not written again (PROJECT_CONTEXT §3.1).

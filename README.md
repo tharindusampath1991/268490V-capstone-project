@@ -10,8 +10,12 @@ It forecasts next-day (day-ahead) electricity prices with prediction intervals. 
 
 ## Zones
 
-- Core zones, approved in Milestone 1: DE-LU, FR, ES.
-- Extra zones: SE1, SE2, SE3, SE4 (all of Sweden). They were added on 19 Nov 2026 and are not part of the approved Milestone 1 scope. They run through the same pipeline with no zone-specific tuning and are reported in their own table.
+Seven core zones run through the same pipeline, with the same analysis, the same models and one results table:
+
+- DE-LU, FR and ES. Milestone 1 approved these three.
+- SE1, SE2, SE3 and SE4, all of Sweden. They are not part of the approved Milestone 1 scope. I added them on 19 Nov 2026 and made them core zones on 24 Nov 2026 ([docs/DECISIONS.md](docs/DECISIONS.md), entries 1 and 59).
+
+Each model has one setting for all zones, chosen on the validation days of all seven. Two limits apply to Sweden: the data has no usable solar forecast for the Swedish zones, and SE1 and SE2 have nearly the same price, so their results are near-duplicates.
 
 ## Setup
 
@@ -91,7 +95,7 @@ The rules and the counts are in [docs/DATA_NOTES.md](docs/DATA_NOTES.md), "Prepr
 
 ## Exploratory data analysis
 
-EDA 1 covers the prices of the three core zones on the hourly table. It uses the train delivery days only, 2019-01-01 to 2026-06-22. No validation or test day is read.
+EDA 1 covers the prices of all seven core zones on the hourly table. It uses the train delivery days only, 2019-01-01 to 2026-06-22. No validation or test day is read.
 
 Once the tables are built, one command writes the figures:
 
@@ -99,7 +103,8 @@ Once the tables are built, one command writes the figures:
 .venv\Scripts\python -m epf.eda.price_figures
 ```
 
-- It prints the numbers behind each figure and writes six PNG files to `reports/figures/`: the price distribution, the price by hour of day, by weekday, by year and month, spike hours and negative prices. It takes about 3 seconds.
+- It prints the numbers behind each figure and writes six PNG files to `reports/figures/`: the price distribution, the price by hour of day, by weekday, by year and month, spike hours and negative prices. It takes about 10 seconds.
+- A figure with one panel per zone starts a new row after four zones. A figure with several panels per zone has one row per zone.
 - Hours, weekdays and months are counted in market time (Europe/Berlin).
 - An hour is a spike when its price is above the mean plus 3 standard deviations of the 28 days before it (DECISIONS entry 38).
 
@@ -109,13 +114,13 @@ The notebook [notebooks/01_eda_prices.ipynb](notebooks/01_eda_prices.ipynb) call
 .venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_prices.ipynb
 ```
 
-EDA 2 compares the price with its day-ahead inputs, again on the train delivery days only. For the three core zones it covers the price against the load, wind and solar forecast, the 15-minute prices inside the hour, the high-price period of 2021 and 2022, and holidays against working days. Its last figure is one section on the Swedish zones SE_1 to SE_4. They are extra zones and not part of the scope approved in Milestone 1.
+EDA 2 compares the price with its day-ahead inputs, again on the train delivery days only. For all seven core zones it covers the price against the load and wind forecast, the 15-minute prices inside the hour, the high-price period of 2021 and 2022, and holidays against working days. The solar forecast is compared for DE_LU, FR and ES only, because the Swedish zones have none in the data. Its last figure compares the four Swedish zones SE_1 to SE_4 with each other, from north to south.
 
 ```
 .venv\Scripts\python -m epf.eda.driver_figures
 ```
 
-- It prints the numbers behind each figure and writes seven PNG files named `eda2_*.png` to `reports/figures/`. It takes about 8 seconds.
+- It prints the numbers behind each figure and writes seven PNG files named `eda2_*.png` to `reports/figures/`. It takes about 13 seconds.
 - Residual load is the load forecast minus the wind and the solar forecast (DECISIONS entry 42). The price of a day is never compared with the actual load of that day.
 - Nothing is filled. An hour with an empty input is left out of that comparison, and the command prints how many hours it left out.
 - A holiday is a nationwide public holiday from the `holidays` package (DECISIONS entry 46). Regional holidays count as working days, and the command prints how many days that is.
@@ -136,11 +141,12 @@ Once the tables are built, this scores the seasonal naive forecast on the 60 val
 .venv\Scripts\python -m epf.evaluation.backtest --model naive --split validation
 ```
 
-- One run covers the hourly table (experiment H) and the 15-minute table (experiment Q) for all zones, core zones first.
+- One run covers the hourly table (experiment H) and the 15-minute table (experiment Q) for all seven zones.
 - The seasonal naive forecast is the price at the same local time 7 days before (DECISIONS entry 52). It is the reference for relative MAE.
 - The command prints its checks per zone and experiment and stops with an error when one fails.
-- Results go to `reports/results/`, which is committed. `backtest_core.csv` holds DE-LU, FR and ES. `backtest_extra.csv` holds SE1 to SE4, the extra zones that are not part of the approved Milestone 1 scope. Each row has the metrics, the model settings, the seed, the run time, the peak memory and the hardware. `daily_core.csv` and `daily_extra.csv` hold the losses per delivery day.
-- A run adds rows to the two `backtest_*.csv` files, so a second run shows as a second set of rows.
+- Results go to `reports/results/`, which is committed. `backtest_core.csv` holds one row per run, zone and experiment for all seven zones. Each row has the metrics, the model settings, the seed, the run time, the peak memory and the hardware. `daily_core.csv` holds the losses per delivery day.
+- SE1 to SE4 are in the same files as DE-LU, FR and ES. Milestone 1 did not approve them, and every results table in the report will say so.
+- A run adds rows to `backtest_core.csv`, so a second run shows as a second set of rows.
 - Forecasts per market time unit are saved under `data/forecasts/`, which git ignores.
 - `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config, which is the naive forecast alone (DECISIONS entries 50 and 58). That run was done once on 24 Nov 2026.
 

@@ -1,6 +1,6 @@
 # CLAUDE.md — 268490V capstone
 
-Individual MSc capstone (CS5998, University of Moratuwa): next-day electricity price forecasting for DE-LU, FR and ES, plus the four Swedish zones SE1–SE4 as extra zones, comparing statistical, ML and time series foundation models. Graded on what is built and justified. I must be able to explain every line in a viva.
+Individual MSc capstone (CS5998, University of Moratuwa): next-day electricity price forecasting for seven core zones, comparing statistical, ML and time series foundation models. Graded on what is built and justified. I must be able to explain every line in a viva.
 
 Scope, forecast protocol, models, plan: @docs/PROJECT_CONTEXT.md
 
@@ -10,7 +10,9 @@ Scope, forecast protocol, models, plan: @docs/PROJECT_CONTEXT.md
 - The leakage rule (PROJECT_CONTEXT §5) applies to every feature and model input. If unsure, leave it out and flag it.
 - Time-based splits only. Tune on validation. The test set is touched only by the final backtest.
 - Never commit raw data, `.env`, tokens or model caches. The token is read from `ENTSOE_API_TOKEN` in `.env`. Never print it. ENTSO-E request URLs contain it, so never print or log a raw request error either.
-- The Swedish zones (SE1–SE4) get no zone-specific tuning or features. Core zones always run first. Swedish work is the first thing cut if a core M2 item is at risk, in the order given in PROJECT_CONTEXT §1.
+- All seven zones are core zones: DE-LU, FR and ES, which Milestone 1 approved, and the Swedish zones SE1–SE4, which I added on 19 Nov 2026 and made core on 24 Nov 2026 (DECISIONS entries 1 and 59). Every analysis, model and results table covers all seven. Swedish work is never cut first.
+- One setting per model, chosen on the validation days of all seven zones. No tuning and no feature for one zone only.
+- Wherever the Swedish zones are shown, say that Milestone 1 approved DE-LU, FR and ES only.
 - No external LLM API calls in the pipeline.
 - Do not commit or push unless I say so. I review the diff first.
 - No backdated commits. No rewriting pushed history.
@@ -43,11 +45,11 @@ Fill in as they come to exist.
 - Price cross-check: `.venv\Scripts\python -m epf.data.crosscheck_prices` (after the price download, about 30 minutes)
 - Coverage gate: `.venv\Scripts\python scripts/check_coverage.py` (first full run: about 4 hours, writes `docs/coverage_gate.md`)
 - Build data: `.venv\Scripts\python -m epf.data.build_dataset` (about 3 seconds once the raw files are saved. Cleans, writes `data/processed/` and validates. `-m epf.data.clean` and `-m epf.data.validate` run one step alone)
-- Price figures: `.venv\Scripts\python -m epf.eda.price_figures` (about 3 seconds, after the build. Core zones, hourly table, train days only. Prints the numbers and writes six PNG files to `reports/figures/`)
-- EDA notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_prices.ipynb` (about 7 seconds. It calls the figure functions and writes no PNG file)
-- Driver figures: `.venv\Scripts\python -m epf.eda.driver_figures` (about 8 seconds, after the build. EDA 2: the price against the load, wind and solar forecast, 15-minute prices, the high-price period and holidays. Core zones first, then one figure for SE_1 to SE_4. Train days only. Prints the numbers and writes seven PNG files to `reports/figures/`)
-- EDA 2 notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_drivers.ipynb` (about 14 seconds. It calls the figure functions and writes no PNG file)
-- Backtest: `.venv\Scripts\python -m epf.evaluation.backtest --model naive --split validation` (after the build. All 7 zones, experiments H and Q, core zones first. The day loops of the naive run took about 3 seconds in total. Prints the checks, adds rows to `reports/results/backtest_core.csv` and `backtest_extra.csv`, writes `daily_core.csv` and `daily_extra.csv`, and saves the forecasts under `data/forecasts/`. `--split test` works only for a model listed under `backtest.test_models`. The naive test run was done once on 24 Nov 2026. Do not run it again without asking)
+- Price figures: `.venv\Scripts\python -m epf.eda.price_figures` (about 10 seconds, after the build. All seven core zones, hourly table, train days only. Prints the numbers and writes six PNG files to `reports/figures/`)
+- EDA notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_prices.ipynb` (about 16 seconds. It calls the figure functions and writes no PNG file)
+- Driver figures: `.venv\Scripts\python -m epf.eda.driver_figures` (about 13 seconds, after the build. EDA 2: the price against the load, wind and solar forecast, 15-minute prices, the high-price period and holidays, for all seven core zones. The solar figure holds DE_LU, FR and ES only, since Sweden has no solar forecast. The last figure compares SE_1 to SE_4 with each other. Train days only. Prints the numbers and writes seven PNG files to `reports/figures/`)
+- EDA 2 notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_drivers.ipynb` (about 19 seconds. It calls the figure functions and writes no PNG file)
+- Backtest: `.venv\Scripts\python -m epf.evaluation.backtest --model naive --split validation` (after the build. All 7 core zones, experiments H and Q. The day loops of the naive run took about 3 seconds in total. Prints the checks, adds rows to `reports/results/backtest_core.csv`, writes `daily_core.csv`, and saves the forecasts under `data/forecasts/`. `--split test` works only for a model listed under `backtest.test_models`. The naive test run was done once on 24 Nov 2026. Do not run it again without asking)
 
 ## Commits
 - No type prefixes such as `feat:`, `docs:` or `data:`. They read as machine-written. Start the subject with a capital letter and a verb, for example "Add price downloader".

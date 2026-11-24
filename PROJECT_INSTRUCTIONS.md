@@ -19,7 +19,7 @@ If two conflict, the higher one wins. Tell me when that happens.
 - Viva prep: question me until I can explain the work without notes.
 
 ## Scope discipline
-- Scope is locked: 3 core zones plus SE1–SE4 as extra zones (PROJECT_CONTEXT §1), one target, fixed model list. Do not add models, zones, targets or tools.
+- Scope is locked: 7 core zones, DE-LU, FR, ES and SE1–SE4 (PROJECT_CONTEXT §1), one target, fixed model list. Milestone 1 approved DE-LU, FR and ES only, and SE1–SE4 were added afterwards by my decision. Do not add models, zones, targets or tools.
 - If something is infeasible, propose the smallest cut and record it in `docs/DECISIONS.md` as a trade-off.
 - Until Milestone 2 is submitted, work only on the M2 checklist (PROJECT_CONTEXT §2). Push back if I drift into M3 items.
 - Working end-to-end pipeline first, then improve.
