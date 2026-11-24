@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — CS5998 Capstone
 
-Owner: A A T Sampath (268490V) · Last updated: 2026-11-23
+Owner: A A T Sampath (268490V) · Last updated: 2026-11-24
 
 ## 0. Snapshot
 
@@ -10,6 +10,7 @@ Owner: A A T Sampath (268490V) · Last updated: 2026-11-23
 | Title | Forecasting Next Day Electricity Prices in Europe with Time Series Foundation Models |
 | Repo | https://github.com/tharindusampath1991/268490V-capstone-project (public) |
 | Status on 19 Nov 2026 | M1 approved as submitted. ENTSO-E token in hand. No code yet. Roughly week 6 of 12 |
+| Status on 24 Nov 2026 | Data pipeline built through preprocessing for all 7 zones: downloads, cleaning, validation and the modelling tables. `DATA_END` is frozen at 2026-11-19 (§4). EDA not started. The M2 plan is two days behind (§9) |
 | Next deadline | M2 Technical Checkpoint, assumed Thu 3 Dec 2026 (confirm, §11) |
 | Grading | M1 25% · M2 25% · M3 50%. A viva can be called at any milestone |
 | AI tools | Allowed. I must understand, justify and explain every decision and result |
@@ -89,7 +90,10 @@ Known traps:
 - Energy-Charts forecast coverage outside Germany is unverified. ENTSO-E is the primary source for prices and covariates, Energy-Charts the cross-check.
 - Weather uses one point per zone, set in the config: Kassel, Paris, Madrid, Luleå, Sundsvall, Stockholm and Malmö (DECISIONS entry 27). One point cannot stand for a whole zone. State it as a limitation, most of all for DE-LU.
 - Run one ENTSO-E download at a time. The downloads share one cache manifest.
-- ENTSO-E can lack a price day while later days are present. On 23 Nov 2026 DE_LU had no price for 20 and 21 Nov and FR none for 21 Nov, although both had 22 Nov (DATA_NOTES, "Raw price format"). `DATA_END` must be a day that is complete in all zones. Energy-Charts values are never used to fill ENTSO-E (DECISIONS entry 7).
+- ENTSO-E can lack a price day while later days are present. On 23 Nov 2026 DE_LU had no price for 20 and 21 Nov and FR none for 21 Nov, although both had 22 Nov (DATA_NOTES, "Raw price format"). `DATA_END` must be a day that is complete in all zones. Energy-Charts values are never used to fill ENTSO-E (DECISIONS entry 7). The three zone-days were still missing on 24 Nov 2026, so `DATA_END` was frozen at 2026-11-19 and no price was filled (DECISIONS entry 29).
+- ENTSO-E can add a value days later. The ES actual load of 2026-11-17 05:00 UTC had three quarter-hour values on 22 Nov 2026 and four on 24 Nov. The reference is the raw files downloaded on 24 Nov 2026 together with `config/approved_gaps.yaml`. The build stops when a count differs (DECISIONS entry 34).
+- Gaps stay empty in the processed tables. Nothing is filled (DECISIONS entry 30). 7 of the 90 ES test days, 6 to 12 Nov 2026, have no wind and no solar forecast. Say so with every ES result that uses these inputs.
+- In the processed tables `actual_load` stands at its own delivery time, and `shortwave_radiation` is the mean of the hour before its timestamp. The feature builder must apply the D-2 cut to the first and line up the second with the delivery hour (DECISIONS entry 33).
 - Energy-Charts now has `/v2` endpoints and lists FR, ES and SE1–SE4 as price zones, all in EUR/MWh. Check the endpoint catalogue before coding.
 - `entsoe-py` 1.0.0: `query_day_ahead_prices` returns hourly values before 1 Oct 2025 and 15-min values after, in one series. Its `resolution` argument is deprecated. Load and wind/solar forecast queries are split by month, so a full pull is several hundred requests.
 - ENTSO-E request URLs carry the token. Never print or log a raw request error.
@@ -126,9 +130,9 @@ What this means:
 - SE1 and SE2 are likely to give near-duplicate results: similar mix and almost the same mean price. Check in the EDA how often their prices are identical. They are cut first for that reason.
 - SE4 has the most solar and no usable solar forecast. State it as a limitation.
 
-Coverage of the `SE_1` to `SE_4` series was measured by the gate. All four zones passed in the runs of 21 and 23 Nov 2026 and stay in M2 (`docs/coverage_gate.md`). The Swedish solar forecast is marked drop, as expected.
+Coverage of the `SE_1` to `SE_4` series was measured by the gate. All four zones passed in the runs of 21, 23 and 24 Nov 2026 and stay in M2 (`docs/coverage_gate.md`). The Swedish solar forecast is marked drop, as expected. The columns marked drop are listed in the config under `coverage_gate.drop_columns` and are left out of the processed tables (DECISIONS entry 32).
 
-Day-1 gate: `python scripts/check_coverage.py` (all 7 zones, 2019 onward, token from `.env`). It caches the raw downloads under `data/raw/entsoe/` and writes `docs/coverage_gate.md`, which is committed. The logic lives in `src/epf/data/coverage_gate.py` and has unit tests on synthetic data. It has run against the live API three times, last on 23 Nov 2026. Rules:
+Day-1 gate: `python scripts/check_coverage.py` (all 7 zones, 2019 onward, token from `.env`). It caches the raw downloads under `data/raw/entsoe/` and writes `docs/coverage_gate.md`, which is committed. The logic lives in `src/epf/data/coverage_gate.py` and has unit tests on synthetic data. It has run against the live API four times, last on 24 Nov 2026 for the frozen period 2019-01-01 to 2026-11-19. Rules:
 - Prices: at least 99% of market time units present in every year. Days with gaps are counted.
 - Load forecast and wind forecast: present on at least 95% of hours in every year.
 - A forecast column below 95% is dropped for that zone and logged. Expected for Swedish solar.
@@ -141,11 +145,21 @@ Log the Sweden addition as the first entry in `docs/DECISIONS.md`: decision, rea
 
 ## 4. Experiments and splits
 
-- Experiment H (hourly): 2019-01-01 to `DATA_END`. After 1 Oct 2025 the hourly price is the mean of the four quarter-hours (log as a decision).
+- `DATA_END` is 2026-11-19. It was frozen on 24 Nov 2026 (DECISIONS entry 29). Never move it.
+- Experiment H (hourly): 2019-01-01 to `DATA_END`. After 1 Oct 2025 the hourly price is the mean of the four quarter-hours (DECISIONS entry 21).
 - Experiment Q (15-min): 2025-10-01 to `DATA_END`.
-- Weather sub-experiment: from March 2024 only.
-- Split by time: test = last 90 days, validation = the 60 days before, train = the rest.
-- Freeze `DATA_END` once during preprocessing. Write absolute split dates into config and `docs/DECISIONS.md`. Never move them afterwards.
+- Weather sub-experiment: from delivery day 2024-03-15 only.
+- Split by time: test = last 90 days, validation = the 60 days before, train = the rest. The absolute dates are in the config and in DECISIONS entry 29. Never move them.
+
+| Split | Delivery days | Count |
+|---|---|---|
+| Train, experiment H | 2019-01-01 to 2026-06-22 | 2730 |
+| Train, experiment Q | 2025-10-01 to 2026-06-22 | 265 |
+| Train, weather sub-experiment | 2024-03-15 to 2026-06-22 | 830 |
+| Validation | 2026-06-23 to 2026-08-21 | 60 |
+| Test | 2026-08-22 to 2026-11-19 | 90 |
+
+- Modelling tables: `python -m epf.data.build_dataset` writes three Parquet tables per zone under `data/processed/` and validates them (DATA_NOTES, "Preprocessing"). `hourly/{ZONE}.parquet` is experiment H with 69120 rows, `quarter_hour/{ZONE}.parquet` is experiment Q with 39844 rows, and `weather/{ZONE}.parquet` has 23520 hourly rows with the run time of each forecast. The index is UTC. Calendar features and lags are not in these tables.
 - The frozen snapshot is for experiments. The daily update job and dashboard use live data and are separate.
 
 ## 5. Forecast protocol and leakage rule
@@ -201,6 +215,7 @@ The Swedish zones run every model with the hyperparameters and context lengths c
 ├── .gitignore                # data/, .env, model caches
 ├── .env.example              # ENTSOE_API_TOKEN=
 ├── config/config.yaml        # zones, DATA_END, splits, seeds, model revisions
+├── config/approved_gaps.yaml # approved columns and empty values of the processed tables
 ├── src/epf/
 │   ├── data/                 # download_*.py, market_time.py, resolution.py, clean.py, validate.py, build_dataset.py
 │   ├── features/
@@ -241,6 +256,8 @@ The Swedish zones run every model with the hyperparameters and context lengths c
 | Tue 1 Dec | README run steps, fresh-clone run, demo script | README, clean-up |
 | Wed 2 Dec | Record demo. Buffer | Video link |
 | Thu 3 Dec | Submit | |
+
+Status on 24 Nov 2026: the rows up to Sun 22 Nov are done. The Sun 22 Nov row closed on Tue 24 Nov, so the plan is two days behind. The dates above are the original targets and have not been moved. EDA 1 is next.
 
 The Swedish zones ride along on every row through config. They get no day of their own, only one EDA section.
 
