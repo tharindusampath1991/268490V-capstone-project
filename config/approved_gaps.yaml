@@ -1,0 +1,133 @@
+# Approved columns and empty values of the processed tables: zone, table, column, count.
+# validate.py fails when a built table has other columns or another count.
+#
+# The counts were measured on 2026-11-23 for the period 2019-01-01 to 2026-11-19 and
+# approved by the owner as cleaning rules 1 to 14 (docs/DATA_NOTES.md, "Preprocessing").
+# Every gap stays empty. Prices have none. Change a number only by a logged decision.
+DE_LU:
+  hourly:
+    price: 0
+    load_forecast: 50
+    wind_onshore_forecast: 3
+    wind_offshore_forecast: 0
+    solar_forecast: 3
+    actual_load: 0
+  quarter_hour:
+    price: 0
+    load_forecast: 0
+    wind_onshore_forecast: 4
+    wind_offshore_forecast: 0
+    solar_forecast: 4
+    actual_load: 0
+  weather:
+    temperature_2m: 24
+    wind_speed_10m: 24
+    wind_speed_100m: 0
+    shortwave_radiation: 0
+    run: 0
+FR:
+  hourly:
+    price: 0
+    load_forecast: 0
+    wind_onshore_forecast: 351
+    solar_forecast: 377
+    actual_load: 50
+  quarter_hour:
+    price: 0
+    load_forecast: 0
+    wind_onshore_forecast: 104
+    solar_forecast: 104
+    actual_load: 15
+  weather:
+    temperature_2m: 24
+    wind_speed_10m: 24
+    wind_speed_100m: 0
+    shortwave_radiation: 0
+    run: 0
+ES:
+  hourly:
+    price: 0
+    load_forecast: 1
+    wind_onshore_forecast: 553
+    solar_forecast: 337
+    actual_load: 41
+  quarter_hour:
+    price: 0
+    load_forecast: 0
+    wind_onshore_forecast: 1920
+    solar_forecast: 864
+    actual_load: 4
+  weather:
+    temperature_2m: 24
+    wind_speed_10m: 24
+    wind_speed_100m: 0
+    shortwave_radiation: 0
+    run: 0
+SE_1:
+  hourly:
+    price: 0
+    load_forecast: 24
+    wind_onshore_forecast: 216
+    actual_load: 0
+  quarter_hour:
+    price: 0
+    load_forecast: 96
+    wind_onshore_forecast: 480
+    actual_load: 0
+  weather:
+    temperature_2m: 24
+    wind_speed_10m: 24
+    wind_speed_100m: 0
+    shortwave_radiation: 0
+    run: 0
+SE_2:
+  hourly:
+    price: 0
+    load_forecast: 24
+    wind_onshore_forecast: 216
+    actual_load: 0
+  quarter_hour:
+    price: 0
+    load_forecast: 96
+    wind_onshore_forecast: 480
+    actual_load: 0
+  weather:
+    temperature_2m: 24
+    wind_speed_10m: 24
+    wind_speed_100m: 0
+    shortwave_radiation: 0
+    run: 0
+SE_3:
+  hourly:
+    price: 0
+    load_forecast: 24
+    wind_onshore_forecast: 216
+    actual_load: 0
+  quarter_hour:
+    price: 0
+    load_forecast: 96
+    wind_onshore_forecast: 480
+    actual_load: 0
+  weather:
+    temperature_2m: 24
+    wind_speed_10m: 24
+    wind_speed_100m: 0
+    shortwave_radiation: 0
+    run: 0
+SE_4:
+  hourly:
+    price: 0
+    load_forecast: 24
+    wind_onshore_forecast: 216
+    actual_load: 0
+  quarter_hour:
+    price: 0
+    load_forecast: 96
+    wind_onshore_forecast: 480
+    actual_load: 0
+  weather:
+    temperature_2m: 24
+    wind_speed_10m: 24
+    wind_speed_100m: 0
+    shortwave_radiation: 0
+    run: 0

@@ -7,8 +7,10 @@ import pytest
 from entsoe.entsoe import QUARTER_MTU_SDAC_GOLIVE
 from entsoe.mappings import lookup_area
 
-from epf.config import load_config, ordered_zones
+from epf.config import REPO_ROOT, load_config, ordered_zones
+from epf.data.clean import ENTSOE_NAMES
 from epf.data.market_time import split_starts
+from epf.data.validate import HOURLY, QUARTER_HOUR, WEATHER_TABLE, load_approved_gaps
 
 
 def zone_entry(key: str, group: str) -> dict:
@@ -81,3 +83,17 @@ def test_project_config_drops_only_columns_of_configured_zones_that_are_not_kept
     for mark in gate["drop_columns"]:
         assert mark["zone"] in zone_keys
         assert (mark["zone"], mark["column"]) not in kept
+
+
+def test_project_approved_gaps_cover_every_zone_and_allow_no_empty_price():
+    config = load_config()
+    approved = load_approved_gaps(REPO_ROOT / config["paths"]["approved_gaps"])
+    drops = {(mark["zone"], ENTSOE_NAMES[mark["column"]])
+             for mark in config["coverage_gate"]["drop_columns"]}
+
+    assert list(approved) == [zone.key for zone in ordered_zones(config)]
+    for zone_key, tables in approved.items():
+        assert list(tables) == [HOURLY, QUARTER_HOUR, WEATHER_TABLE]
+        for name in (HOURLY, QUARTER_HOUR):
+            assert tables[name]["price"] == 0
+            assert not any((zone_key, column) in drops for column in tables[name])
