@@ -11,6 +11,7 @@ from epf.config import REPO_ROOT, load_config, ordered_zones
 from epf.data.clean import ENTSOE_NAMES
 from epf.data.market_time import split_starts
 from epf.data.validate import HOURLY, QUARTER_HOUR, WEATHER_TABLE, load_approved_gaps
+from epf.evaluation.cutoff import cut_columns
 from epf.features.holiday_calendar import holiday_dates
 
 
@@ -112,3 +113,15 @@ def test_ordered_zones_uses_public_holidays_when_a_zone_names_no_category():
     zones = ordered_zones({"zones": [zone_entry("A", "core")]})
 
     assert zones[0].holiday_categories == ("public",)
+
+
+def test_project_config_places_every_approved_column_under_exactly_one_cut():
+    config = load_config()
+    columns = cut_columns(config)
+    listed = [columns.price, *columns.day_ahead, *columns.delayed]
+    approved = load_approved_gaps(REPO_ROOT / config["paths"]["approved_gaps"])
+
+    assert len(listed) == len(set(listed))
+    for tables in approved.values():
+        for name in (HOURLY, QUARTER_HOUR):
+            assert set(tables[name]) <= set(listed)
