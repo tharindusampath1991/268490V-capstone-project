@@ -386,6 +386,48 @@ def spread_summary(spread: pd.Series) -> dict[str, float]:
             "zero_percent": 100.0 * (known == 0).mean()}
 
 
+# ---- prices of two zones ----
+
+def yearly_means(price: pd.Series, market_tz: str) -> pd.Series:
+    """Return the mean price per year in market time."""
+    years = price.index.tz_convert(market_tz).year
+    return price.groupby(np.asarray(years)).mean().rename_axis("year")
+
+
+def equal_share_by_year(one: pd.Series, other: pd.Series, market_tz: str) -> pd.DataFrame:
+    """Return per year how often two zones have exactly the same price.
+
+    Input: the prices of two zones on the same UTC index. An hour in which
+        one of them is empty is left out.
+    Output: one row per year in market time with hours, identical and share_percent.
+    """
+    both = one.notna() & other.notna()
+    same = one[both] == other[both]
+    groups = same.groupby(np.asarray(same.index.tz_convert(market_tz).year))
+    table = pd.DataFrame({"hours": groups.size(), "identical": groups.sum().astype(int)})
+    table["share_percent"] = 100.0 * table["identical"] / table["hours"]
+    return table.rename_axis("year")
+
+
+def difference_before_and_from(one: pd.Series, other: pd.Series,
+                               start: pd.Timestamp) -> pd.DataFrame:
+    """Compare the prices of two zones before a moment and from it on.
+
+    Input: the prices of two zones on the same UTC index and the moment.
+    Output: the rows before and from, each with the hours, the percentage of
+        hours with exactly the same price, and the median and the 95%
+        quantile of the absolute price difference.
+    """
+    difference = (one - other).abs().dropna()
+    parts = {"before": difference[difference.index < start],
+             "from": difference[difference.index >= start]}
+    rows = {name: {"hours": len(part), "identical_percent": 100.0 * (part == 0).mean(),
+                   "median_abs_difference": part.median(),
+                   "q95_abs_difference": part.quantile(0.95)}
+            for name, part in parts.items()}
+    return pd.DataFrame.from_dict(rows, orient="index")
+
+
 def _bin_table(x: pd.Series, y: pd.Series, numbers: pd.Series) -> pd.DataFrame:
     """Return per bin number the range and median of x, the hours and the median of y."""
     numbers = numbers.astype(int)

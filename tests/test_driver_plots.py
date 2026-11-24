@@ -20,6 +20,7 @@ from epf.eda.driver_plots import (
     plot_quarter_hours,
     plot_regime,
     plot_shares_by_bin,
+    plot_sweden,
 )
 from epf.eda.price_stats import hour_profile
 
@@ -150,3 +151,18 @@ def test_plot_regime_writes_a_png(tmp_path, drivers):
     assert len(figure.axes) == 4
     assert len(figure.axes[0].get_lines()) == 3
 
+def test_plot_sweden_writes_a_png_with_three_panels(tmp_path):
+    years = [2023, 2024, 2025]
+    yearly = pd.DataFrame({"N1": [10.0, 12.0, 8.0], "S1": [30.0, 40.0, 50.0]}, index=years)
+    equal = pd.DataFrame({"N1 = S1": [90.0, 60.0, 3.0]}, index=years)
+    index = hourly_index(START, END)
+    price = pd.Series(1.0 + 0.3 * np.sin(np.arange(len(index)) * 2 * np.pi / 24), index=index)
+    profiles = pd.DataFrame({"N1": hour_profile(price, MARKET_TZ)["median"],
+                             "S1": hour_profile(price * 1.1, MARKET_TZ)["median"]})
+    path = tmp_path / "sweden.png"
+
+    figure = plot_sweden(yearly, equal, profiles, 2024.8, "From 2024-10-30", "Title", path)
+
+    assert_png(path)
+    assert len(figure.axes) == 3
+    assert len(figure.axes[0].get_lines()) == 2

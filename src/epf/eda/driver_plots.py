@@ -179,6 +179,42 @@ def plot_regime(profiles: dict[str, pd.DataFrame], medians: dict[str, dict[str, 
                    path, note)
 
 
+def plot_sweden(relative: pd.DataFrame, equal: pd.DataFrame, profiles: pd.DataFrame,
+                mark: float, mark_label: str, title: str, path: Path | None = None,
+                note: str = "") -> Figure:
+    """Draw the extra zones in one figure: level, identical prices and daily shape.
+
+    Input: the mean price per year divided by the mean of the zones (one
+        column per zone), the percentage of hours with the same price per year
+        (one column per pair of zones), the median price per hour of day
+        divided by the mean price of the zone (one column per zone), and a
+        position on the year axis to mark with a dashed line and a label.
+    """
+    figure, axes = _panels(1, 3, (PANEL_WIDTH * 3, 3.8))
+    left, middle, right = axes[0]
+    for colour, zone in zip(SERIES, relative.columns):
+        left.plot(relative.index, relative[zone], color=colour, linewidth=2, marker="o",
+                  markersize=4, label=zone)
+        right.plot(profiles.index, profiles[zone], color=colour, linewidth=2, label=zone)
+    for colour, pair in zip(SERIES, equal.columns):
+        middle.plot(equal.index, equal[pair], color=colour, linewidth=2, marker="o",
+                    markersize=4, label=pair)
+    middle.axvline(mark, color=INK_SOFT, linewidth=0.8, linestyle="--")
+    middle.text(mark, 0.97, f" {mark_label}", transform=middle.get_xaxis_transform(), ha="left",
+                va="top", fontsize=8, color=INK_SOFT)
+    for ax in (left, middle):
+        ax.set_xticks(relative.index)
+        ax.set_xlabel("Year")
+    right.set_xticks(range(0, 24, 3))
+    right.set_xlabel(HOUR_LABEL)
+    left.set_ylabel("Mean price of the year divided by\nthe mean of the zones")
+    middle.set_ylabel("Hours with exactly the same price, %")
+    right.set_ylabel("Median price divided by\nthe mean price of the zone")
+    for ax in (left, middle, right):
+        ax.legend(frameon=False, fontsize=8, loc="best")
+    return _finish(figure, title, path, note)
+
+
 def _cell_counts(x: pd.Series, price: pd.Series, low: float,
                  high: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Count the hours per cell of input (in GW) and price, with the edges of the cells."""

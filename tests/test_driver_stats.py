@@ -33,7 +33,9 @@ from epf.eda.driver_stats import (
     day_types,
     delivery_day,
     difference_summary,
+    difference_before_and_from,
     driver_table,
+    equal_share_by_year,
     high_price_period,
     hour_profile_by_group,
     hour_spread,
@@ -50,6 +52,7 @@ from epf.eda.driver_stats import (
     spread_summary,
     to_time_steps,
     weekend_holidays,
+    yearly_means,
 )
 from epf.eda.price_stats import hour_profile
 
@@ -526,3 +529,57 @@ def test_spread_summary_counts_the_hours_and_the_hours_without_a_spread():
     assert summary["median"] == 3.0
     assert summary["max"] == 10.0
     assert summary["zero_percent"] == 25.0
+
+
+# ---- prices of two zones ----
+
+def test_yearly_means_counts_the_year_in_market_time():
+    index = hours("2024-12-31", "2025-01-02")              # one day in each year
+    price = pd.Series([10.0] * 24 + [30.0] * 24, index=index)
+
+    result = yearly_means(price, MARKET_TZ)
+
+    assert index[24].year == 2024                          # 23:00 UTC on 31 December
+    assert result.to_dict() == {2024: 10.0, 2025: 30.0}
+
+
+def test_equal_share_by_year_counts_the_hours_with_exactly_the_same_price():
+    index = hours("2024-12-31", "2025-01-02")
+    one = pd.Series(50.0, index=index)
+    other = one.copy()
+    other.iloc[24:36] += 0.01                              # twelve hours of 2025 differ by a cent
+
+    result = equal_share_by_year(one, other, MARKET_TZ)
+
+    assert result.loc[2024].to_dict() == {"hours": 24, "identical": 24, "share_percent": 100.0}
+    assert result.loc[2025].to_dict() == {"hours": 24, "identical": 12, "share_percent": 50.0}
+
+
+def test_equal_share_by_year_leaves_out_an_hour_with_an_empty_price():
+    index = hours("2025-06-02", "2025-06-03")
+    one = pd.Series(50.0, index=index)
+    other = one.copy()
+    other.iloc[0] = np.nan
+
+    result = equal_share_by_year(one, other, MARKET_TZ)
+
+    assert result.loc[2025, "hours"] == 23
+    assert result.loc[2025, "share_percent"] == 100.0
+
+
+def test_difference_before_and_from_splits_the_hours_at_the_start():
+    index = hours("2025-06-02", "2025-06-04")
+    one = pd.Series(50.0, index=index)
+    other = one.copy()
+    other.iloc[24:] += np.tile([1.0, 3.0], 12)             # the second day differs by 1 or 3
+
+    result = difference_before_and_from(one, other, market_time("2025-06-03"))
+
+    assert list(result.index) == ["before", "from"]
+    assert result.loc["before"].to_dict() == {
+        "hours": 24, "identical_percent": 100.0, "median_abs_difference": 0.0,
+        "q95_abs_difference": 0.0}
+    assert result.loc["from", "hours"] == 24
+    assert result.loc["from", "identical_percent"] == 0.0
+    assert result.loc["from", "median_abs_difference"] == 2.0
+    assert result.loc["from", "q95_abs_difference"] == 3.0

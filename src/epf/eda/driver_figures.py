@@ -5,10 +5,11 @@ Usage, from the repo root:
 
 EDA 2 compares the price with the day-ahead load, wind and solar forecasts,
 looks inside the hour at the 15-minute prices, and compares the high-price
-period of 2021 and 2022, holidays and working days. The command reads the
-tables each figure of FIGURES names, keeps the train delivery days and writes
-one PNG per figure to paths.figures. No validation or test day is read into a
-figure or a number.
+period of 2021 and 2022, holidays and working days. The core zones come
+first. The last figure is one section on the extra zones. The command reads
+the tables each figure of FIGURES names, keeps the train delivery days and
+writes one PNG per figure to paths.figures. No validation or test day is read
+into a figure or a number.
 
 Each figure function takes the train tables by zone and the config. It
 returns the tables behind the figure and the figure, and writes a PNG when a
@@ -40,6 +41,7 @@ from epf.eda.price_plots import UNIT
 from epf.features.holiday_calendar import holiday_dates, regional_days, subdivisions
 
 CORE = "core"
+EXTRA = "extra"
 PRICE = stats.PRICE
 HOURS_PER_DAY = 24
 MW_PER_GW = 1000.0
@@ -321,6 +323,59 @@ def holidays(tables: ZoneTables, config: dict,
     return out, figure
 
 
+def sweden(tables: ZoneTables, config: dict, path: Path | None = None) -> tuple[Tables, Figure]:
+    """The extra zones in one section: price level, identical prices and daily shape.
+
+    Input: the hourly tables of the extra zones, in the order of the config.
+    Each zone is compared with the next one in that order. Levels are shown
+    relative to the mean of the zones, never in EUR against each other. The
+    hours are split at eda.nordic_flow_based_start, the first delivery day of
+    Nordic flow-based market coupling.
+    """
+    market_tz, start_day = config["market"]["timezone"], config["eda"]["nordic_flow_based_start"]
+    start = pd.Timestamp(start_day, tz=market_tz)
+    prices = _prices(tables)
+    zones = list(prices)
+    pairs = list(zip(zones[:-1], zones[1:]))
+    yearly = pd.DataFrame({zone: stats.yearly_means(price, market_tz)
+                           for zone, price in prices.items()})
+    relative = yearly.div(yearly.mean(axis=1), axis=0)
+    equal = pd.DataFrame({f"{one} = {other}": stats.equal_share_by_year(
+        prices[one], prices[other], market_tz)["share_percent"] for one, other in pairs})
+    profiles = pd.DataFrame({zone: price_stats.hour_profile(price / price.mean(),
+                                                            market_tz)["median"]
+                             for zone, price in prices.items()}).rename_axis("hour")
+    correlations = {zone: stats.correlation_table(stats.driver_table(table))
+                    for zone, table in tables.items()}
+    out = {
+        "Price over the train period": _by_zone(
+            {zone: {"hours": int(price.count()), "mean": price.mean(), "median": price.median(),
+                    "negative_hours": int(price_stats.negative_flags(price).sum())}
+             for zone, price in prices.items()}),
+        "Mean price per year": yearly,
+        "Mean price per year divided by the mean of the zones": relative,
+        "Hours with exactly the same price in neighbouring zones, percent": equal,
+    }
+    for one, other in pairs:
+        out[f"Prices of {one} and {other} before and from {start_day}"] = (
+            stats.difference_before_and_from(prices[one], prices[other], start))
+    out["Rank correlation of the price with each input"] = _by_zone(
+        {zone: table["rank_correlation"] for zone, table in correlations.items()})
+    out["Hours left out because the input or the price is empty"] = _by_zone(
+        {zone: table["hours_left_out"] for zone, table in correlations.items()})
+    out["Median price per hour of day divided by the mean price of the zone"] = profiles
+    days_in_year = 366 if start.is_leap_year else 365
+    mark = start.year + (start.dayofyear - 1) / days_in_year
+    title = (f"Extra zones {zones[0]} to {zones[-1]}, not in the approved Milestone 1 scope, "
+             "train period")
+    note = (f"Zones in the order of the config, each compared with the next. Dashed line: "
+            f"Nordic flow-based market coupling from delivery day {start_day}. "
+            f"{_period_note(tables, market_tz)}")
+    figure = plots.plot_sweden(relative, equal, profiles, mark,
+                               f"Flow-based coupling\n from {start_day}", title, path, note)
+    return out, figure
+
+
 FIGURES = {
     "eda2_price_vs_drivers": (price_vs_drivers, HOURLY, CORE),
     "eda2_solar_midday": (solar_midday, HOURLY, CORE),
@@ -328,6 +383,7 @@ FIGURES = {
     "eda2_quarter_hour_spread": (quarter_hour_spread, QUARTER_HOUR, CORE),
     "eda2_regime_2022": (regime, HOURLY, CORE),
     "eda2_holidays": (holidays, HOURLY, CORE),
+    "eda2_sweden_north_south": (sweden, HOURLY, EXTRA),
 }
 
 
