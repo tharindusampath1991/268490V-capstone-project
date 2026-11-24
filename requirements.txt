@@ -12,6 +12,8 @@ nbconvert==7.17.2
 numpy==2.5.5
 # statsforecast 2.1.1 (added later) requires pandas below 3.0.
 pandas==2.3.3
+# Reads the peak memory of a backtest run and the cores and memory of the machine.
+psutil==7.2.2
 # Not imported by the code. pandas needs it to read and write Parquet files (DECISIONS entry 3).
 pyarrow==26.0.1
 pytest==9.2.0
