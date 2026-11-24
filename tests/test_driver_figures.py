@@ -20,7 +20,7 @@ from epf.data.validate import HOURLY, QUARTER_HOUR, table_path
 from epf.eda import driver_stats as stats
 from epf.eda.driver_figures import (
     CORE,
-    EXTRA,
+    NEIGHBOURS,
     FIGURES,
     holidays,
     load_tables,
@@ -60,7 +60,8 @@ def project_config(tmp_path) -> dict:
         "paths": {"processed": str(tmp_path / "processed"), "figures": str(tmp_path / "figures")},
         "eda": {"spike_window_days": 28, "spike_sd": 3, "median_bins": 10, "share_bins": 5,
                 "solar_day_groups": 3, "regime_factor": 2, "holiday_window_days": 7,
-                "regional_share_edges": [0.25, 0.5], "nordic_flow_based_start": "2025-04-01"},
+                "regional_share_edges": [0.25, 0.5], "nordic_flow_based_start": "2025-04-01",
+                "neighbour_zones": ["XX", "YY"]},
         "zones": [{"key": "XX", "holiday_country": "SE", "group": "extra",
                    "holiday_categories": ["public", "de_facto"]},
                   {"key": "YY", "holiday_country": "SE", "group": "extra",
@@ -160,10 +161,10 @@ def test_run_writes_every_figure_and_prints_no_validation_value(config, tmp_path
     assert printed.index("AA") < printed.index("XX")       # core zones come first
 
 
-def test_the_extra_zones_are_the_last_figure():
+def test_the_neighbouring_zones_are_the_last_figure():
     groups = [group for _, _, group in FIGURES.values()]
 
-    assert groups == [CORE] * 6 + [EXTRA]
+    assert groups == [CORE] * 6 + [NEIGHBOURS]
 
 
 def test_price_vs_drivers_counts_the_hours_left_out_per_input(config):
@@ -243,7 +244,7 @@ def test_holidays_lists_the_regional_days_the_calendar_leaves_out(config):
 def test_sweden_compares_neighbouring_zones_before_and_from_the_flow_based_start(config):
     save_extra_tables(config)
 
-    tables, figure = sweden(load_tables(config, HOURLY, EXTRA), config)
+    tables, figure = sweden(load_tables(config, HOURLY, NEIGHBOURS), config)
 
     split = tables["Prices of XX and YY before and from 2025-04-01"]
     by_year = tables["Hours with exactly the same price in neighbouring zones, percent"]
@@ -260,7 +261,7 @@ def test_sweden_compares_neighbouring_zones_before_and_from_the_flow_based_start
 def test_sweden_leaves_out_the_solar_forecast_the_zones_do_not_have(config):
     save_extra_tables(config)
 
-    tables, _ = sweden(load_tables(config, HOURLY, EXTRA), config)
+    tables, _ = sweden(load_tables(config, HOURLY, NEIGHBOURS), config)
 
     correlation = tables["Rank correlation of the price with each input"]
     assert list(correlation.columns) == [stats.LOAD, stats.WIND, stats.RESIDUAL]

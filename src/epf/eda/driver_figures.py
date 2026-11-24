@@ -5,9 +5,10 @@ Usage, from the repo root:
 
 EDA 2 compares the price with the day-ahead load, wind and solar forecasts,
 looks inside the hour at the 15-minute prices, and compares the high-price
-period of 2021 and 2022, holidays and working days. The core zones come
-first. The last figure is one section on the extra zones. The command reads
-the tables each figure of FIGURES names, keeps the train delivery days and
+period of 2021 and 2022, holidays and working days, for every core zone.
+The last figure compares the zones listed under eda.neighbour_zones, each
+with the next one, which are the four Swedish zones from north to south. The
+command reads the tables each figure of FIGURES names, keeps the train delivery days and
 writes one PNG per figure to paths.figures. No validation or test day is read
 into a figure or a number.
 
@@ -42,7 +43,7 @@ from epf.eda.price_plots import UNIT
 from epf.features.holiday_calendar import holiday_dates, regional_days, subdivisions
 
 CORE = "core"
-EXTRA = "extra"
+NEIGHBOURS = "neighbours"   # the zones of eda.neighbour_zones, each compared with the next
 PRICE = stats.PRICE
 HOURS_PER_DAY = 24
 MW_PER_GW = 1000.0
@@ -53,16 +54,21 @@ Tables = dict[str, pd.DataFrame]
 ZoneTables = dict[str, pd.DataFrame]
 
 
-def load_tables(config: dict, table_name: str, group: str) -> ZoneTables:
-    """Return the train rows of one processed table for every zone of a group.
+def load_tables(config: dict, table_name: str, zones: str) -> ZoneTables:
+    """Return the train rows of one processed table for a set of zones.
 
     Input: the config dictionary, a table name (HOURLY or QUARTER_HOUR of
-        epf.data.validate) and a zone group, core or extra.
-    Output: tables by zone key in the order of the config, each with a UTC
-        index that ends before 00:00 market time on splits.validation_start.
+        epf.data.validate) and the set of zones: CORE for the zones of that
+        group, NEIGHBOURS for the zones listed under eda.neighbour_zones.
+    Output: tables by zone key, each with a UTC index that ends before 00:00
+        market time on splits.validation_start. Core zones come in the order
+        of the config, neighbouring zones in the order of their list.
     """
-    zones = [zone for zone in ordered_zones(config) if zone.group == group]
-    return {zone.key: load_train(config, table_name, zone.key) for zone in zones}
+    if zones == NEIGHBOURS:
+        keys = list(config["eda"]["neighbour_zones"])
+    else:
+        keys = [zone.key for zone in ordered_zones(config) if zone.group == zones]
+    return {key: load_train(config, table_name, key) for key in keys}
 
 
 def price_vs_drivers(tables: ZoneTables, config: dict,
@@ -300,9 +306,10 @@ def holidays(tables: ZoneTables, config: dict,
 
 
 def sweden(tables: ZoneTables, config: dict, path: Path | None = None) -> tuple[Tables, Figure]:
-    """The extra zones in one section: price level, identical prices and daily shape.
+    """Neighbouring zones in one section: price level, identical prices and daily shape.
 
-    Input: the hourly tables of the extra zones, in the order of the config.
+    Input: the hourly tables of the zones of eda.neighbour_zones, in the
+    order of that list, which runs from north to south for Sweden.
     Each zone is compared with the next one in that order. Levels are shown
     relative to the mean of the zones, never in EUR against each other. The
     hours are split at eda.nordic_flow_based_start, the first delivery day of
@@ -342,9 +349,8 @@ def sweden(tables: ZoneTables, config: dict, path: Path | None = None) -> tuple[
     out["Median price per hour of day divided by the mean price of the zone"] = profiles
     days_in_year = 366 if start.is_leap_year else 365
     mark = start.year + (start.dayofyear - 1) / days_in_year
-    title = (f"Extra zones {zones[0]} to {zones[-1]}, not in the approved Milestone 1 scope, "
-             "train period")
-    note = (f"Zones in the order of the config, each compared with the next. Dashed line: "
+    title = f"{zones[0]} to {zones[-1]}, each zone compared with the next, train period"
+    note = (f"Zones in the order of eda.neighbour_zones, each compared with the next. Dashed line: "
             f"Nordic flow-based market coupling from delivery day {start_day}. "
             f"{_period_note(tables, market_tz)}")
     figure = plots.plot_sweden(relative, equal, profiles, mark,
@@ -359,7 +365,7 @@ FIGURES = {
     "eda2_quarter_hour_spread": (quarter_hour_spread, QUARTER_HOUR, CORE),
     "eda2_regime_2022": (regime, HOURLY, CORE),
     "eda2_holidays": (holidays, HOURLY, CORE),
-    "eda2_sweden_north_south": (sweden, HOURLY, EXTRA),
+    "eda2_sweden_north_south": (sweden, HOURLY, NEIGHBOURS),
 }
 
 

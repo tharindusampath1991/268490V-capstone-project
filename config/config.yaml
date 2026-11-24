@@ -112,8 +112,11 @@ eda:
   holiday_window_days: 7     # a holiday is compared with the working days this many days before and after it
   regional_share_edges: [0.25, 0.5]   # groups of regional holidays by share of subdivisions
   nordic_flow_based_start: "2024-10-30"   # first delivery day of Nordic flow-based market coupling
+  # Zones that EDA 2 compares each with the next one in this order: the Swedish zones from
+  # north to south (docs/DECISIONS.md, entries 48 and 60).
+  neighbour_zones: [SE_1, SE_2, SE_3, SE_4]
 
-# Zones are processed in this order: core first, then extra.
+# Zones are processed in this order: core first, then extra. All seven zones are core.
 #   key              ENTSO-E area key used by entsoe-py
 #   holiday_country  country code for the `holidays` package
 #   holiday_categories  holiday categories of that package. Nationwide days only
@@ -121,8 +124,13 @@ eda:
 #   energy_charts    Energy-Charts bidding zone (bzn) for the price cross-check. The API
 #                    states the licence of each answer: CC BY 4.0 for DE-LU, FR and SE4,
 #                    private and internal use only for ES, SE1, SE2 and SE3 (2026-11-20).
-#   group            core  = approved in Milestone 1
-#                    extra = added 19 Nov 2026 (docs/DECISIONS.md, entry 1)
+#   group            core  = in every analysis, model run and results table. Never cut.
+#                    extra = runs after the core zones, in its own results files. No zone
+#                            has this group now.
+#                    Milestone 1 approved DE_LU, FR and ES only. SE_1 to SE_4 were added on
+#                    19 Nov 2026 (docs/DECISIONS.md, entry 1) and made core zones on
+#                    24 Nov 2026 by owner decision (entry 59). A group does not say what
+#                    Milestone 1 approved.
 #   weather_point    the one place whose weather forecast stands for the zone
 #                    (docs/DECISIONS.md, entry 27). Degrees north and east.
 zones:
@@ -147,25 +155,25 @@ zones:
   - key: SE_1
     holiday_country: SE
     holiday_categories: [public, de_facto]
-    group: extra
+    group: core
     energy_charts: SE1
     weather_point: {place: Luleå, latitude: 65.58, longitude: 22.15}
   - key: SE_2
     holiday_country: SE
     holiday_categories: [public, de_facto]
-    group: extra
+    group: core
     energy_charts: SE2
     weather_point: {place: Sundsvall, latitude: 62.40, longitude: 17.32}
   - key: SE_3
     holiday_country: SE
     holiday_categories: [public, de_facto]
-    group: extra
+    group: core
     energy_charts: SE3
     weather_point: {place: Stockholm, latitude: 59.33, longitude: 18.07}
   - key: SE_4
     holiday_country: SE
     holiday_categories: [public, de_facto]
-    group: extra
+    group: core
     energy_charts: SE4
     weather_point: {place: Malmö, latitude: 55.60, longitude: 13.01}
 
