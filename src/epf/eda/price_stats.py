@@ -17,7 +17,7 @@ MONTHS = list(range(1, 13))
 TIME_FORMAT = "%Y-%m-%d %H:%M"
 
 
-def price_summary(price: pd.Series) -> pd.Series:
+def price_summary(price: pd.Series) -> dict[str, float]:
     """Return the count, centre, spread, quantiles and skewness of the prices.
 
     Output: hours is the number of prices that are not empty. q01 to q99 are
@@ -29,16 +29,16 @@ def price_summary(price: pd.Series) -> pd.Series:
                "min": price.min()}
     summary.update({name: price.quantile(share) for name, share in quantiles.items()})
     summary.update({"max": price.max(), "skew": price.skew()})
-    return pd.Series(summary)
+    return summary
 
 
-def extremes(price: pd.Series, market_tz: str) -> pd.Series:
+def extremes(price: pd.Series, market_tz: str) -> dict[str, float | str]:
     """Return the lowest and the highest price, each with its hour in market time."""
     low, high = price.idxmin(), price.idxmax()
-    return pd.Series({
+    return {
         "min": price[low], "min_time": low.tz_convert(market_tz).strftime(TIME_FORMAT),
         "max": price[high], "max_time": high.tz_convert(market_tz).strftime(TIME_FORMAT),
-    })
+    }
 
 
 def pooled_range(prices: dict[str, pd.Series], low_share: float,
@@ -111,6 +111,11 @@ def negative_flags(price: pd.Series) -> pd.Series:
     return price < 0
 
 
+def count_zero(price: pd.Series) -> int:
+    """Return the number of hours with a price of exactly zero."""
+    return int((price == 0).sum())
+
+
 def flag_counts(flags: pd.Series, market_tz: str) -> dict[str, pd.Series]:
     """Count the flagged hours per year, per month and per hour of day in market time.
 
@@ -127,7 +132,7 @@ def flag_counts(flags: pd.Series, market_tz: str) -> dict[str, pd.Series]:
             for name, (values, order) in keys.items()}
 
 
-def flag_summary(flags: pd.Series, judged_hours: int, market_tz: str) -> pd.Series:
+def flag_summary(flags: pd.Series, judged_hours: int, market_tz: str) -> dict[str, float]:
     """Return how many hours are flagged, their share and the delivery days they fall on.
 
     Input: a True/False series with a UTC index, and the number of hours
@@ -137,9 +142,8 @@ def flag_summary(flags: pd.Series, judged_hours: int, market_tz: str) -> pd.Seri
     """
     flagged = int(flags.sum())
     days = flags.index[flags.to_numpy()].tz_convert(market_tz).normalize()
-    return pd.Series({"hours_judged": judged_hours, "hours_flagged": flagged,
-                      "share_percent": 100.0 * flagged / judged_hours,
-                      "days_flagged": days.nunique()})
+    return {"hours_judged": judged_hours, "hours_flagged": flagged,
+            "share_percent": 100.0 * flagged / judged_hours, "days_flagged": days.nunique()}
 
 
 def _profile(price: pd.Series, keys: pd.Index, order: list[int]) -> pd.DataFrame:

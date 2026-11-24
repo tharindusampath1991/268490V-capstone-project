@@ -15,6 +15,7 @@ paths:
   # Approved columns and empty values per zone and table. Written when DATA_END is frozen.
   approved_gaps: config/approved_gaps.yaml
   coverage_report: docs/coverage_gate.md
+  figures: reports/figures   # written by the EDA commands, committed
   crosscheck_report: docs/price_crosscheck.md
   # Results for zones whose Energy-Charts data is for private and internal use only.
   # Under data/, which git ignores. Never commit this file.
@@ -66,6 +67,13 @@ splits:
   validation_days: 60
   validation_start: "2026-06-23"   # validation: 2026-06-23 to 2026-08-21
   test_start: "2026-08-22"         # test: 2026-08-22 to 2026-11-19
+
+# EDA 1 (docs/DECISIONS.md, entry 38). An hour is a spike when its price is above the mean
+# plus spike_sd standard deviations of the spike_window_days days before it. Both numbers
+# are conventions. They were not tuned.
+eda:
+  spike_window_days: 28
+  spike_sd: 3
 
 # Zones are processed in this order: core first, then extra.
 #   key              ENTSO-E area key used by entsoe-py

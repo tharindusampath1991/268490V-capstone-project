@@ -10,6 +10,7 @@ import pytest
 from epf.data.market_time import hourly_index
 from epf.eda.price_stats import (
     count_outside,
+    count_zero,
     extremes,
     flag_counts,
     flag_summary,
@@ -208,6 +209,12 @@ def test_negative_flags_marks_prices_below_zero_and_not_zero():
     price = pd.Series([-0.01, 0.0, 0.01, -500.0], index=hours("2025-06-02", "2025-06-03")[:4])
 
     assert negative_flags(price).tolist() == [True, False, False, True]
+
+
+def test_count_zero_counts_prices_of_exactly_zero():
+    price = pd.Series([-1.0, 0.0, 0.0, 0.01], index=hours("2025-06-02", "2025-06-03")[:4])
+
+    assert count_zero(price) == 2
 
 
 def test_flag_counts_counts_per_local_year_month_and_hour():
