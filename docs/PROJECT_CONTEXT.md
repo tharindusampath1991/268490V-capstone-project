@@ -10,7 +10,7 @@ Owner: A A T Sampath (268490V) · Last updated: 2026-11-24
 | Title | Forecasting Next Day Electricity Prices in Europe with Time Series Foundation Models |
 | Repo | https://github.com/tharindusampath1991/268490V-capstone-project (public) |
 | Status on 19 Nov 2026 | M1 approved as submitted. ENTSO-E token in hand. No code yet. Roughly week 6 of 12 |
-| Status on 24 Nov 2026 | Data pipeline built through preprocessing for all 7 zones: downloads, cleaning, validation and the modelling tables. `DATA_END` is frozen at 2026-11-19 (§4). EDA not started. The M2 plan is two days behind (§9) |
+| Status on 24 Nov 2026 | Data pipeline built through preprocessing for all 7 zones: downloads, cleaning, validation and the modelling tables. `DATA_END` is frozen at 2026-11-19 (§4). EDA 1 is done: prices of the core zones on train days, six figures and `notebooks/01_eda_prices.ipynb`. EDA 2 is not started (§9) |
 | Next deadline | M2 Technical Checkpoint, assumed Thu 3 Dec 2026 (confirm, §11) |
 | Grading | M1 25% · M2 25% · M3 50%. A viva can be called at any milestone |
 | AI tools | Allowed. I must understand, justify and explain every decision and result |
@@ -258,7 +258,7 @@ The Swedish zones run every model with the hyperparameters and context lengths c
 | Wed 2 Dec | Record demo. Buffer | Video link |
 | Thu 3 Dec | Submit | |
 
-Status on 24 Nov 2026: the rows up to Sun 22 Nov are done. The Sun 22 Nov row closed on Tue 24 Nov, so the plan is two days behind. The dates above are the original targets and have not been moved. EDA 1 is next.
+Status on 24 Nov 2026: the rows up to Mon 23 Nov are done. The Sun 22 Nov row and the Mon 23 Nov row (EDA 1) both closed on Tue 24 Nov. The dates above are the original targets and have not been moved. EDA 2, the row of Tue 24 Nov, is next.
 
 The Swedish zones ride along on every row through config. They get no day of their own, only one EDA section.
 
