@@ -251,7 +251,7 @@ On 2026-11-24, with `data.end` set, the 2026 file of every dataset and zone was 
 - Actual load: 7 files in 420 seconds. No hour of 2026 is without a value.
 - Weather: 7 files in 5095 seconds, 323 runs and 7752 rows per zone. `temperature_2m` and `wind_speed_10m` are empty for the 24 hours of 2026-06-24 in every zone. Nothing else is missing.
 - Every 2026 entry in the three manifests now has the query end 2026-11-19 23:00 UTC: 28 in `entsoe`, 7 in `open_meteo` and 7 in `energy_charts`.
-- Price cross-check, run again: 56 zone-years and 693021 compared prices. No pair differs by more than 0.01 EUR/MWh and neither source has a timestamp the other lacks. `docs/price_crosscheck.md` did not change, because it already covered 2019-01-01 to 2026-11-19.
+- Price cross-check, run again for all seven zones. DE_LU, FR and SE_4: 24 zone-years and 297009 compared prices. No pair differs by more than 0.01 EUR/MWh and neither source has a timestamp the other lacks. `docs/price_crosscheck.md` did not change, because it already covered 2019-01-01 to 2026-11-19. The results for ES, SE_1, SE_2 and SE_3 are in the local file only (DECISIONS entry 12).
 - Coverage gate, run again: `docs/coverage_gate.md` now covers 2019-01-01 to 2026-11-19. SE_1 to SE_4 pass. No verdict and no keep or drop mark changed. ES `Wind Onshore` is at 93.81% in 2026.
 - One value changed against the files of 2026-11-22: the ES actual load for the hour 2026-11-17 05:00 UTC now has all four quarter-hour values. It had three.
 
