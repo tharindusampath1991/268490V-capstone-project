@@ -30,13 +30,14 @@ import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
-from epf.config import REPO_ROOT, load_config, ordered_zones
+from epf.config import REPO_ROOT, Zone, load_config, ordered_zones
 from epf.data.splits import load_train
 from epf.data.validate import HOURLY, QUARTER_HOUR
 from epf.eda import driver_plots as plots
 from epf.eda import driver_stats as stats
 from epf.eda import price_figures as base
 from epf.eda import price_stats
+from epf.eda import spread_stats
 from epf.eda.price_plots import UNIT
 from epf.features.holiday_calendar import holiday_dates, regional_days, subdivisions
 
@@ -202,13 +203,15 @@ def quarter_hour_spread(tables: ZoneTables, config: dict,
     Input: the 15-minute tables (experiment Q) by zone.
     """
     market_tz = config["market"]["timezone"]
-    spreads = {zone: stats.hour_spread(table[PRICE]) for zone, table in tables.items()}
+    spreads = {zone: spread_stats.hour_spread(table[PRICE]) for zone, table in tables.items()}
     profiles = {zone: price_stats.hour_profile(spread, market_tz)
                 for zone, spread in spreads.items()}
-    quarters = {zone: stats.quarter_profile(stats.quarter_differences(table[PRICE]), market_tz)
+    quarters = {zone: spread_stats.quarter_profile(
+        spread_stats.quarter_differences(table[PRICE]), market_tz)
                 for zone, table in tables.items()}
     out = {"Spread inside the hour: highest minus lowest quarter-hour price":
-           _by_zone({zone: stats.spread_summary(spread) for zone, spread in spreads.items()})}
+           _by_zone({zone: spread_stats.spread_summary(spread)
+                     for zone, spread in spreads.items()})}
     names = {"median": "Median spread per hour of day", "q25": "25% quantile of the spread",
              "q75": "75% quantile of the spread", "count": "Hours with a spread"}
     for statistic, name in names.items():
@@ -266,55 +269,28 @@ def holidays(tables: ZoneTables, config: dict,
 
     A holiday is a nationwide holiday of the zone's holiday_country in its
     holiday_categories. Regional holidays count as working days. The last
-    tables measure what that leaves out.
+    four tables before the profiles measure what that leaves out.
     """
     market_tz, window = config["market"]["timezone"], config["eda"]["holiday_window_days"]
-    edges = config["eda"]["regional_share_edges"]
     zones = {zone.key: zone for zone in ordered_zones(config)}
-    profiles, counts, medians, plain, strict, left_out, by_share = {}, {}, {}, {}, {}, {}, {}
-    for zone, table in tables.items():
-        country, categories = zones[zone].holiday_country, zones[zone].holiday_categories
-        daily = stats.daily_mean(table[PRICE], market_tz)
-        years = range(daily.index[0].year, daily.index[-1].year + 1)
-        nationwide = holiday_dates(country, categories, years)
-        types = stats.day_types(daily.index, nationwide)
-        profiles[zone] = stats.hour_profile_by_group(
-            table[PRICE], stats.to_time_steps(types, table.index, market_tz), market_tz,
-            stats.DAY_TYPES)
-        counts[zone] = {**types.value_counts().reindex(stats.DAY_TYPES, fill_value=0).to_dict(),
-                        "holidays_on_a_weekend": stats.weekend_holidays(daily.index, nationwide)}
-        medians[zone] = daily.groupby(types).median().reindex(stats.DAY_TYPES).to_dict()
-        holiday_days = types.index[types == stats.HOLIDAY]
-        working = types.index[types == stats.WORKING]
-        regional = regional_days(country, categories, years)
-        is_regional = np.array([day in regional for day in working.date], dtype=bool)
-        regional_working, never_holiday = working[is_regional], working[~is_regional]
-        plain[zone] = stats.difference_summary(
-            stats.matched_difference(daily, holiday_days, working, window))
-        strict[zone] = stats.difference_summary(
-            stats.matched_difference(daily, holiday_days, never_holiday, window))
-        left_out[zone] = {"days": len(regional_working),
-                          "percent_of_working_days": 100.0 * len(regional_working) / len(working),
-                          "subdivisions": len(subdivisions(country))}
-        by_share[zone] = _regional_by_share(
-            daily, regional_working, never_holiday, regional, len(subdivisions(country)),
-            window, edges)
-    out = {
-        "Delivery days per day type": _by_zone(counts),
-        "Median of the daily mean price per day type": _by_zone(medians),
-        f"Holiday on Monday to Friday: daily mean price minus the median of the working days "
-        f"within {window} days": _by_zone(plain),
-        "The same, with regional holidays taken out of the working days": _by_zone(strict),
-        "Regional holidays on Monday to Friday that count as working days": _by_zone(left_out),
-        "Regional holidays by the share of subdivisions that have them: days":
-            _by_zone({zone: table["days"] for zone, table in by_share.items()}),
-        f"Regional holidays by share of subdivisions: median of the daily mean price minus the "
-        f"working days within {window} days":
-            _by_zone({zone: table["median"] for zone, table in by_share.items()}),
+    numbers = {key: _holiday_numbers(table, zones[key], config) for key, table in tables.items()}
+    profiles = {key: by_part["profile"] for key, by_part in numbers.items()}
+    names = {
+        "counts": "Delivery days per day type",
+        "medians": "Median of the daily mean price per day type",
+        "difference": "Holiday on Monday to Friday: daily mean price minus the median of the "
+                      f"working days within {window} days",
+        "difference_strict": "The same, with regional holidays taken out of the working days",
+        "left_out": "Regional holidays on Monday to Friday that count as working days",
+        "regional_days": "Regional holidays by the share of subdivisions that have them: days",
+        "regional_difference": "Regional holidays by share of subdivisions: median of the daily "
+                               f"mean price minus the working days within {window} days",
     }
+    out = {name: _by_zone({key: by_part[part] for key, by_part in numbers.items()})
+           for part, name in names.items()}
     for day_type in stats.DAY_TYPES:
         out[f"Median price per hour of day, {day_type.lower()}"] = pd.DataFrame(
-            {zone: profile[day_type] for zone, profile in profiles.items()})
+            {key: profile[day_type] for key, profile in profiles.items()})
     note = ("Holiday: a nationwide public holiday. A holiday on a Saturday or Sunday counts as "
             f"that weekend day. {_period_note(tables, market_tz)}")
     figure = plots.plot_group_profiles(
@@ -337,10 +313,10 @@ def sweden(tables: ZoneTables, config: dict, path: Path | None = None) -> tuple[
     prices = _prices(tables)
     zones = list(prices)
     pairs = list(zip(zones[:-1], zones[1:]))
-    yearly = pd.DataFrame({zone: stats.yearly_means(price, market_tz)
+    yearly = pd.DataFrame({zone: spread_stats.yearly_means(price, market_tz)
                            for zone, price in prices.items()})
     relative = yearly.div(yearly.mean(axis=1), axis=0)
-    equal = pd.DataFrame({f"{one} = {other}": stats.equal_share_by_year(
+    equal = pd.DataFrame({f"{one} = {other}": spread_stats.equal_share_by_year(
         prices[one], prices[other], market_tz)["share_percent"] for one, other in pairs})
     profiles = pd.DataFrame({zone: price_stats.hour_profile(price / price.mean(),
                                                             market_tz)["median"]
@@ -358,7 +334,7 @@ def sweden(tables: ZoneTables, config: dict, path: Path | None = None) -> tuple[
     }
     for one, other in pairs:
         out[f"Prices of {one} and {other} before and from {start_day}"] = (
-            stats.difference_before_and_from(prices[one], prices[other], start))
+            spread_stats.difference_before_and_from(prices[one], prices[other], start))
     out["Rank correlation of the price with each input"] = _by_zone(
         {zone: table["rank_correlation"] for zone, table in correlations.items()})
     out["Hours left out because the input or the price is empty"] = _by_zone(
@@ -390,7 +366,8 @@ FIGURES = {
 def train_period(tables: ZoneTables, config: dict) -> pd.DataFrame:
     """Return per zone the number of time steps and the first and last one in market time."""
     period = base.train_period(_prices(tables), config)
-    return period.rename(columns={"hours": "time_steps", "first_hour": "first", "last_hour": "last"})
+    names = {"hours": "time_steps", "first_hour": "first", "last_hour": "last"}
+    return period.rename(columns=names)
 
 
 def run(config: dict) -> None:
@@ -455,21 +432,63 @@ def _period_summary(drivers: pd.DataFrame, labels: pd.Series) -> pd.DataFrame:
     return pd.DataFrame.from_dict(rows, orient="index").rename_axis("period")
 
 
-def _regional_by_share(daily: pd.Series, regional_working: pd.DatetimeIndex,
-                       reference: pd.DatetimeIndex, regional: dict, subdivision_count: int,
-                       window: int, edges: list[float]) -> pd.DataFrame:
-    """Return per share of subdivisions the regional holidays and their price difference.
+def _holiday_numbers(table: pd.DataFrame, zone: Zone, config: dict) -> dict:
+    """Return the holiday numbers of one zone.
 
-    Output: one row per group of share_groups with days and the median of
-        matched_difference against the reference days.
+    Input: the hourly train table of the zone, its config entry and the config.
+    Output: profile is the median price per hour of day and day type. Every
+        other entry is the row of the zone in one printed table of holidays.
     """
-    shares = pd.Series([regional[day] / subdivision_count for day in regional_working.date],
+    market_tz, window = config["market"]["timezone"], config["eda"]["holiday_window_days"]
+    daily = stats.daily_mean(table[PRICE], market_tz)
+    years = range(daily.index[0].year, daily.index[-1].year + 1)
+    nationwide = holiday_dates(zone.holiday_country, zone.holiday_categories, years)
+    types = stats.day_types(daily.index, nationwide)
+    by_step = stats.to_time_steps(types, table.index, market_tz)
+    holiday_days, working = types.index[types == stats.HOLIDAY], types.index[types == stats.WORKING]
+    numbers = {
+        "profile": stats.hour_profile_by_group(table[PRICE], by_step, market_tz, stats.DAY_TYPES),
+        "counts": {**types.value_counts().reindex(stats.DAY_TYPES, fill_value=0).to_dict(),
+                   "holidays_on_a_weekend": stats.weekend_holidays(daily.index, nationwide)},
+        "medians": daily.groupby(types).median().reindex(stats.DAY_TYPES).to_dict(),
+        "difference": stats.difference_summary(
+            stats.matched_difference(daily, holiday_days, working, window)),
+    }
+    numbers.update(_regional_numbers(daily, types, zone, years, config))
+    return numbers
+
+
+def _regional_numbers(daily: pd.Series, types: pd.Series, zone: Zone, years: range,
+                      config: dict) -> dict:
+    """Return what counting regional holidays as working days leaves out, for one zone.
+
+    Input: the daily mean price and the day type per delivery day, the config
+        entry of the zone, the years of the data and the config.
+    Output: difference_strict is the holiday difference against working days
+        that are a holiday in no subdivision. left_out counts the regional
+        holidays among the working days. regional_days and regional_difference
+        give those days and their price difference by share of subdivisions.
+    """
+    window, edges = config["eda"]["holiday_window_days"], config["eda"]["regional_share_edges"]
+    holiday_days, working = types.index[types == stats.HOLIDAY], types.index[types == stats.WORKING]
+    regional = regional_days(zone.holiday_country, zone.holiday_categories, years)
+    count = len(subdivisions(zone.holiday_country))
+    is_regional = np.array([day in regional for day in working.date], dtype=bool)
+    regional_working, never_holiday = working[is_regional], working[~is_regional]
+    shares = pd.Series([regional[day] / count for day in regional_working.date],
                        index=regional_working, dtype=float)
     groups, order = stats.share_groups(shares, edges)
-    differences = stats.matched_difference(daily, regional_working, reference, window)
-    by_group = differences.groupby(groups.to_numpy())
-    return pd.DataFrame({"days": by_group.count().reindex(order, fill_value=0),
-                         "median": by_group.median().reindex(order)})
+    by_group = stats.matched_difference(daily, regional_working, never_holiday,
+                                        window).groupby(groups.to_numpy())
+    return {
+        "difference_strict": stats.difference_summary(
+            stats.matched_difference(daily, holiday_days, never_holiday, window)),
+        "left_out": {"days": len(regional_working),
+                     "percent_of_working_days": 100.0 * len(regional_working) / len(working),
+                     "subdivisions": count},
+        "regional_days": by_group.count().reindex(order, fill_value=0),
+        "regional_difference": by_group.median().reindex(order),
+    }
 
 
 if __name__ == "__main__":

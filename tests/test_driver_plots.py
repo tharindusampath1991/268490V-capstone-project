@@ -14,6 +14,7 @@ import pytest
 
 from epf.data.market_time import hourly_index, quarter_hour_index
 from epf.eda import driver_stats as stats
+from epf.eda import spread_stats
 from epf.eda.driver_plots import (
     plot_group_profiles,
     plot_price_vs_inputs,
@@ -124,8 +125,9 @@ def test_plot_quarter_hours_writes_a_png(tmp_path):
     index = quarter_hour_index(START, END)
     step = np.arange(len(index))
     price = pd.Series(50.0 + 20.0 * np.sin(step * 2 * np.pi / 96) + 5.0 * (step % 4), index=index)
-    spreads = {"AA": hour_profile(stats.hour_spread(price), MARKET_TZ)}
-    quarters = {"AA": stats.quarter_profile(stats.quarter_differences(price), MARKET_TZ)}
+    spreads = {"AA": hour_profile(spread_stats.hour_spread(price), MARKET_TZ)}
+    differences = spread_stats.quarter_differences(price)
+    quarters = {"AA": spread_stats.quarter_profile(differences, MARKET_TZ)}
     path = tmp_path / "quarters.png"
 
     figure = plot_quarter_hours(spreads, quarters, path)

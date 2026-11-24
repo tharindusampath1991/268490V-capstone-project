@@ -80,7 +80,8 @@ def hourly_table() -> pd.DataFrame:
     step = np.arange(len(index))
     load = 5000.0 + 1000.0 * np.sin(step * 2 * np.pi / 24)
     wind = 1500.0 + 1000.0 * np.sin(step * 2 * np.pi / 170)
-    solar = np.clip(2000.0 * np.sin(step * 2 * np.pi / 24 - 2.0), 0.0, None) * (1 + step / len(step))
+    daylight = np.clip(2000.0 * np.sin(step * 2 * np.pi / 24 - 2.0), 0.0, None)
+    solar = daylight * (1 + step / len(step))
     price = (load - wind - solar) / 50.0 - 30.0
     price[index.tz_convert(MARKET_TZ).month == 3] += 400.0
     table = pd.DataFrame({"price": price, "load_forecast": load, "wind_onshore_forecast": wind,
