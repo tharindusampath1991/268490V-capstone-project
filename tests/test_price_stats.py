@@ -15,6 +15,7 @@ from epf.eda.price_stats import (
     flag_counts,
     flag_summary,
     hour_profile,
+    month_means,
     month_year_means,
     negative_flags,
     pooled_range,
@@ -244,6 +245,47 @@ def test_flag_counts_puts_both_hours_2_of_a_25_hour_day_under_hour_2():
 
     assert counts["hour"][2] == 2
     assert counts["hour"].sum() == 25
+
+
+def test_month_means_divides_the_hours_of_a_month_by_the_years_it_occurs_in():
+    index = hours("2024-12-01", "2026-02-01")       # December 2024 to January 2026
+    price = pd.Series(1.0, index=index)
+    price[pd.Timestamp("2025-01-10 12:00", tz="UTC")] = -1.0
+    price[pd.Timestamp("2025-01-11 12:00", tz="UTC")] = -1.0
+    price[pd.Timestamp("2025-01-12 12:00", tz="UTC")] = -1.0
+    price[pd.Timestamp("2026-01-10 12:00", tz="UTC")] = -1.0
+    price[pd.Timestamp("2025-06-10 12:00", tz="UTC")] = -1.0
+
+    means = month_means(negative_flags(price), price.notna(), MARKET_TZ)
+
+    assert means.index.tolist() == list(range(1, 13))
+    assert means.loc[1].tolist() == [4, 2, 2.0]     # hours, years, mean_per_year
+    assert means.loc[6].tolist() == [1, 1, 1.0]
+    assert means.loc[12].tolist() == [0, 2, 0.0]
+
+
+def test_month_means_counts_a_year_only_when_the_month_has_a_judged_hour():
+    index = hours("2024-12-01", "2026-02-01")
+    price = pd.Series(-1.0, index=index)
+    judged = pd.Series(index >= market_time("2025-01-01"), index=index)
+    flags = negative_flags(price) & judged
+
+    means = month_means(flags, judged, MARKET_TZ)
+
+    assert means.loc[12, "years"] == 1              # December 2024 is not judged
+    assert means.loc[12, "hours"] == 31 * 24
+    assert means.loc[12, "mean_per_year"] == 31 * 24
+    assert means.loc[1, "years"] == 2
+
+
+def test_month_means_is_empty_for_a_month_that_is_not_in_the_data():
+    price = pd.Series(-1.0, index=hours("2025-01-01", "2025-03-01"))
+
+    means = month_means(negative_flags(price), price.notna(), MARKET_TZ)
+
+    assert means.loc[7, "years"] == 0
+    assert np.isnan(means.loc[7, "mean_per_year"])
+    assert means.loc[2, "mean_per_year"] == 28 * 24
 
 
 def test_flag_summary_gives_the_share_and_the_delivery_days_with_a_flag():

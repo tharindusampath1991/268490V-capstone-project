@@ -29,7 +29,7 @@ BLUE_RAMP = ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"]   # low to h
 WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-COUNT_ROWS = {"year": "Hours per year", "month": "Hours per month",
+COUNT_ROWS = {"year": "Hours per year", "month": "Mean hours per year, by month",
               "hour": "Hours per hour of day"}
 UNIT = "EUR/MWh"
 
@@ -119,10 +119,12 @@ def plot_month_year(means: dict[str, pd.DataFrame], note: str,
 
 def plot_flag_counts(counts: dict[str, dict[str, pd.Series]], title: str, note: str,
                      path: Path | None = None) -> Figure:
-    """Draw how many flagged hours fall in each year, each month and each hour of day.
+    """Draw the flagged hours per year, per month and per hour of day.
 
-    Input: the result of flag_counts by zone, the figure title and a note
-        for the foot of the figure. Each row of panels shares one y-axis.
+    Input: per zone one series under each key of COUNT_ROWS, the figure
+        title and a note for the foot of the figure. year and hour hold the
+        counts of flag_counts, month the mean per year of month_means. Each
+        row of panels shares one y-axis.
     """
     figure, axes = _panels(len(COUNT_ROWS), len(counts), (4.2 * len(counts), 8.2), sharey="row")
     for column, (zone, by_key) in enumerate(counts.items()):

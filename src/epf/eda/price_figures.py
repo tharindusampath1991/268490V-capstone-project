@@ -33,6 +33,7 @@ CORE = "core"
 HISTOGRAM_SHARES = (0.001, 0.999)   # quantiles of all core zones together
 HOURS_PER_DAY = 24
 DAY_FORMAT = "%Y-%m-%d"
+MONTH_NOTE = " The month panels divide by the years in which the month occurs."
 
 Tables = dict[str, pd.DataFrame]
 
@@ -117,7 +118,7 @@ def spikes(prices: dict[str, pd.Series], config: dict,
     days, sd = config["eda"]["spike_window_days"], config["eda"]["spike_sd"]
     window = days * HOURS_PER_DAY
     flags = {zone: stats.spike_flags(price, window, sd) for zone, price in prices.items()}
-    judged = {zone: int(stats.spike_threshold(price, window, sd).notna().sum())
+    judged = {zone: stats.spike_threshold(price, window, sd).notna()
               for zone, price in prices.items()}
     note = (f"Spike: a price above the mean plus {sd:g} standard deviations of the {days} days "
             f"before it. {_period_note(prices, market_tz)}")
@@ -130,7 +131,7 @@ def negative_prices(prices: dict[str, pd.Series], config: dict,
     """Hours with a price below zero per year, month and hour of day."""
     market_tz = config["market"]["timezone"]
     flags = {zone: stats.negative_flags(price) for zone, price in prices.items()}
-    judged = {zone: int(price.count()) for zone, price in prices.items()}
+    judged = {zone: price.notna() for zone, price in prices.items()}
     zero = {zone: {"hours_at_zero": stats.count_zero(price)} for zone, price in prices.items()}
     return _flag_tables_and_figure(flags, judged, zero, market_tz,
                                    "Hours with a negative price, train period",
@@ -195,18 +196,37 @@ def _profile_tables(profiles: dict[str, pd.DataFrame], index_name: str) -> Table
     return tables
 
 
-def _flag_tables_and_figure(flags: dict[str, pd.Series], judged: dict[str, int],
+def _flag_tables_and_figure(flags: dict[str, pd.Series], judged: dict[str, pd.Series],
                             extra: dict[str, dict], market_tz: str, title: str, note: str,
                             path: Path | None) -> tuple[Tables, Figure]:
-    """Count flagged hours per zone and draw them per year, month and hour of day."""
+    """Count flagged hours per zone and draw them per year, month and hour of day.
+
+    Input: per zone a True/False series of the flagged hours and one of the
+        hours that could have been flagged, and extra columns for the summary.
+    The month panel shows the mean per year, because the last year of the
+    train set is a part year and its months would count once more than the rest.
+    """
     counts = {zone: stats.flag_counts(flag, market_tz) for zone, flag in flags.items()}
-    summary = {zone: {**stats.flag_summary(flag, judged[zone], market_tz), **extra.get(zone, {})}
-               for zone, flag in flags.items()}
+    months = {zone: stats.month_means(flag, judged[zone], market_tz)
+              for zone, flag in flags.items()}
+    summary = {zone: {**stats.flag_summary(flag, int(judged[zone].sum()), market_tz),
+                      **extra.get(zone, {})} for zone, flag in flags.items()}
+    panels = {zone: {"year": counts[zone]["year"], "month": months[zone]["mean_per_year"],
+                     "hour": counts[zone]["hour"]} for zone in flags}
     tables = {"Summary": _by_zone(summary)}
     for key, label in plots.COUNT_ROWS.items():
-        table = pd.DataFrame({zone: by_key[key] for zone, by_key in counts.items()})
+        if key == "month":
+            tables["Hours per month"] = _by_month(months, "hours")
+            tables["Years in which the month has a judged hour"] = _by_month(months, "years")
+        table = pd.DataFrame({zone: panel[key] for zone, panel in panels.items()})
         tables[label] = table.rename_axis(key)
-    return tables, plots.plot_flag_counts(counts, title, note, path)
+    return tables, plots.plot_flag_counts(panels, title, note + MONTH_NOTE, path)
+
+
+def _by_month(months: dict[str, pd.DataFrame], column: str) -> pd.DataFrame:
+    """Return one column of the month_means tables, with one column per zone."""
+    table = pd.DataFrame({zone: by_month[column] for zone, by_month in months.items()})
+    return table.rename_axis("month")
 
 
 def _period_note(prices: dict[str, pd.Series], market_tz: str) -> str:

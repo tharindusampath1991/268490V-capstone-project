@@ -16,7 +16,7 @@ import pytest
 
 from epf.data.market_time import hourly_index
 from epf.data.validate import HOURLY, table_path
-from epf.eda.price_figures import FIGURES, load_core_prices, run, spikes
+from epf.eda.price_figures import FIGURES, load_core_prices, negative_prices, run, spikes
 
 MARKET_TZ = "Europe/Berlin"
 VALIDATION_PRICE = 9999.0
@@ -86,3 +86,21 @@ def test_spikes_reads_the_window_and_the_standard_deviations_from_the_config(tmp
     tables, _ = spikes(prices, config)
 
     assert tables["Summary"].loc["AA", "hours_judged"] == 70 * 24 - 28 * 24
+
+
+def test_negative_prices_gives_the_month_panel_as_the_mean_per_year(tmp_path):
+    config = project_config(tmp_path)
+    save_hourly(config, "AA")
+    prices = load_core_prices(config)
+
+    tables, figure = negative_prices(prices, config)
+
+    hours = tables["Hours per month"]["AA"]
+    years = tables["Years in which the month has a judged hour"]["AA"]
+    means = tables["Mean hours per year, by month"]["AA"]
+    assert years.tolist() == [1, 1, 1] + [0] * 9          # January to March 2025
+    assert hours[1] > 0
+    assert means[1] == hours[1] / 1
+    assert means.iloc[3:].isna().all()
+    month_panel = figure.axes[1]                            # second row, first zone
+    assert month_panel.get_ylabel() == "Mean hours per year, by month"

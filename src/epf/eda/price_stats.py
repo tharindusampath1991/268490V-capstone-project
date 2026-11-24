@@ -132,6 +132,24 @@ def flag_counts(flags: pd.Series, market_tz: str) -> dict[str, pd.Series]:
             for name, (values, order) in keys.items()}
 
 
+def month_means(flags: pd.Series, judged: pd.Series, market_tz: str) -> pd.DataFrame:
+    """Return per month the flagged hours and their mean per year, in market time.
+
+    Input: two True/False series with the same UTC index. flags marks the
+        hours, judged the hours that could have been marked.
+    Output: one row per month 1 to 12 with three columns. hours is the number
+        of flagged hours. years is the number of years in which the month has
+        a judged hour. mean_per_year is hours divided by years, empty where
+        years is 0. A month that is only partly in the data counts as one year.
+    """
+    flagged = flag_counts(flags, market_tz)["month"]
+    local = judged.index[judged.to_numpy()].tz_convert(market_tz)
+    years = pd.Series(local.year, index=local.month).groupby(level=0).nunique()
+    years = years.reindex(MONTHS, fill_value=0)
+    return pd.DataFrame({"hours": flagged, "years": years,
+                         "mean_per_year": flagged / years.where(years > 0)})
+
+
 def flag_summary(flags: pd.Series, judged_hours: int, market_tz: str) -> dict[str, float]:
     """Return how many hours are flagged, their share and the delivery days they fall on.
 
