@@ -1,9 +1,10 @@
 """The price figures of EDA 1, one function per kind of figure.
 
-Every function takes numbers that epf.eda.price_stats computed, by zone, and
-draws one panel or one column of panels per zone. It returns the figure and
-writes a PNG when a path is given. Prices are in EUR/MWh. Hours, weekdays,
-months and years are in market time.
+Every function takes numbers that epf.eda.price_stats computed, by zone. A
+figure with one panel per zone starts a new row after MAX_COLUMNS zones. A
+figure with several panels per zone has one row per zone. Each function
+returns the figure and writes a PNG when a path is given. Prices are in
+EUR/MWh. Hours, weekdays, months and years are in market time.
 """
 
 from pathlib import Path
@@ -19,6 +20,10 @@ from epf.eda.price_stats import count_outside
 
 DPI = 150
 HISTOGRAM_BINS = 80
+MAX_COLUMNS = 4       # panels in a row when a figure has one panel per zone
+PANEL_WIDTH = 4.2     # inches
+PANEL_HEIGHT = 3.8    # inches, for a figure with one panel per zone
+ROW_HEIGHT = 2.4      # inches, for a figure with one row of panels per zone
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
 INK_SOFT = "#52514e"
@@ -41,9 +46,9 @@ def plot_distribution(prices: dict[str, pd.Series], low: float, high: float,
     Input: prices by zone, and the range [low, high] in EUR/MWh. Prices
         outside the range are not drawn. Their number is written in the panel.
     """
-    figure, axes = _panels(1, len(prices), (4.2 * len(prices), 3.8), sharey=True)
+    figure, panels = _zone_panels(len(prices), sharey=True)
     bins = np.linspace(low, high, HISTOGRAM_BINS + 1)
-    for ax, (zone, price) in zip(axes[0], prices.items()):
+    for ax, (zone, price) in zip(panels, prices.items()):
         ax.hist(price.dropna(), bins=bins, color=BLUE, edgecolor=SURFACE, linewidth=0.3)
         ax.axvline(0, color=INK_SOFT, linewidth=0.8)
         below, above = count_outside(price, low, high)
@@ -52,7 +57,7 @@ def plot_distribution(prices: dict[str, pd.Series], low: float, high: float,
                 fontsize=8, color=INK_SOFT)
         ax.set_title(zone)
         ax.set_xlabel(f"Price, {UNIT}")
-    axes[0][0].set_ylabel("Hours")
+    _label_rows(panels, "Hours")
     return _finish(figure, "Hourly day-ahead price, train period", path)
 
 
@@ -62,16 +67,16 @@ def plot_hour_profile(profiles: dict[str, pd.DataFrame], path: Path | None = Non
     Input: the table of hour_profile by zone. An hour without a price leaves
         a break in the line.
     """
-    figure, axes = _panels(1, len(profiles), (4.2 * len(profiles), 3.8), sharey=True)
-    for ax, (zone, profile) in zip(axes[0], profiles.items()):
+    figure, panels = _zone_panels(len(profiles), sharey=True)
+    for ax, (zone, profile) in zip(panels, profiles.items()):
         ax.fill_between(profile.index, profile["q25"], profile["q75"], color=BLUE_LIGHT,
                         linewidth=0, label="25% to 75%")
         ax.plot(profile.index, profile["median"], color=BLUE, linewidth=2, label="Median")
         ax.set_xticks(range(0, 24, 3))
         ax.set_title(zone)
         ax.set_xlabel("Hour of day, market time")
-    axes[0][0].set_ylabel(f"Price, {UNIT}")
-    axes[0][0].legend(frameon=False, fontsize=8, loc="upper left")
+    _label_rows(panels, f"Price, {UNIT}")
+    panels[0].legend(frameon=False, fontsize=8, loc="upper left")
     return _finish(figure, "Price by hour of day, train period", path)
 
 
@@ -80,16 +85,16 @@ def plot_weekday_profile(profiles: dict[str, pd.DataFrame], path: Path | None = 
 
     Input: the table of weekday_profile by zone.
     """
-    figure, axes = _panels(1, len(profiles), (4.2 * len(profiles), 3.8), sharey=True)
-    for ax, (zone, profile) in zip(axes[0], profiles.items()):
+    figure, panels = _zone_panels(len(profiles), sharey=True)
+    for ax, (zone, profile) in zip(panels, profiles.items()):
         spread = [profile["median"] - profile["q25"], profile["q75"] - profile["median"]]
         ax.errorbar(profile.index, profile["median"], yerr=spread, fmt="o", color=BLUE,
                     markersize=6, elinewidth=2, capsize=3, label="Median, with 25% to 75%")
         ax.set_xticks(profile.index, WEEKDAY_NAMES)
         ax.set_ylim(bottom=min(0.0, ax.get_ylim()[0]))
         ax.set_title(zone)
-    axes[0][0].set_ylabel(f"Price, {UNIT}")
-    axes[0][0].legend(frameon=False, fontsize=8, loc="lower left")
+    _label_rows(panels, f"Price, {UNIT}")
+    panels[0].legend(frameon=False, fontsize=8, loc="lower left")
     return _finish(figure, "Price by weekday, train period", path)
 
 
@@ -119,16 +124,18 @@ def plot_month_year(means: dict[str, pd.DataFrame], note: str,
 
 def plot_flag_counts(counts: dict[str, dict[str, pd.Series]], title: str, note: str,
                      path: Path | None = None) -> Figure:
-    """Draw the flagged hours per year, per month and per hour of day.
+    """Draw the flagged hours per year, per month and per hour of day, one row per zone.
 
     Input: per zone one series under each key of COUNT_ROWS, the figure
         title and a note for the foot of the figure. year and hour hold the
         counts of flag_counts, month the mean per year of month_means. Each
-        row of panels shares one y-axis.
+        column of panels shares one y-axis.
     """
-    figure, axes = _panels(len(COUNT_ROWS), len(counts), (4.2 * len(counts), 8.2), sharey="row")
-    for column, (zone, by_key) in enumerate(counts.items()):
-        for row, key in enumerate(COUNT_ROWS):
+    figure, axes = _panels(len(counts), len(COUNT_ROWS),
+                           (PANEL_WIDTH * len(COUNT_ROWS), ROW_HEIGHT * len(counts)),
+                           sharey="col")
+    for row, (zone, by_key) in enumerate(counts.items()):
+        for column, key in enumerate(COUNT_ROWS):
             ax, series = axes[row][column], by_key[key]
             positions = range(len(series))
             bars = ax.bar(positions, series.to_numpy(), width=0.7, color=BLUE)
@@ -139,10 +146,10 @@ def plot_flag_counts(counts: dict[str, dict[str, pd.Series]], title: str, note: 
                 ax.set_xticks(positions, [name[0] for name in MONTH_NAMES])
             else:
                 ax.set_xticks(range(0, 24, 3))
-                ax.set_xlabel("Hour of day, market time")
-        axes[0][column].set_title(zone)
-    for row, label in enumerate(COUNT_ROWS.values()):
-        axes[row][0].set_ylabel(label)
+        _zone_label(axes[row][0], zone)
+    for column, label in enumerate(COUNT_ROWS.values()):
+        axes[0][column].set_title(label)
+    axes[-1][-1].set_xlabel("Hour of day, market time")
     return _finish(figure, title, path, note)
 
 
@@ -163,6 +170,32 @@ def _panels(rows: int, columns: int, size: tuple[float, float], grid: bool = Tru
         if grid:
             ax.grid(axis="y", color=GRID, linewidth=0.8)
     return figure, axes
+
+
+def _zone_panels(count: int, grid: bool = True, **shared) -> tuple[Figure, list[plt.Axes]]:
+    """Return a figure with one panel per zone, and the panels in the order of the zones.
+
+    A row holds at most MAX_COLUMNS panels. A place in the last row that no
+    zone needs is taken out of the figure.
+    """
+    columns = min(count, MAX_COLUMNS)
+    rows = -(-count // columns)   # rounded up
+    figure, axes = _panels(rows, columns, (PANEL_WIDTH * columns, PANEL_HEIGHT * rows), grid,
+                           **shared)
+    for unused in axes.flat[count:]:
+        unused.remove()
+    return figure, list(axes.flat[:count])
+
+
+def _label_rows(panels: list[plt.Axes], label: str) -> None:
+    """Write the y-axis label on the first panel of every row made by _zone_panels."""
+    for ax in panels[::min(len(panels), MAX_COLUMNS)]:
+        ax.set_ylabel(label)
+
+
+def _zone_label(ax: plt.Axes, zone: str) -> None:
+    """Write the zone name beside the first panel of its row."""
+    ax.set_ylabel(zone, color=INK, fontsize=10)
 
 
 def _finish(figure: Figure, title: str, path: Path | None, note: str = "") -> Figure:

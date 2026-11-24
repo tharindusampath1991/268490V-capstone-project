@@ -102,5 +102,5 @@ def test_negative_prices_gives_the_month_panel_as_the_mean_per_year(tmp_path):
     assert hours[1] > 0
     assert means[1] == hours[1] / 1
     assert means.iloc[3:].isna().all()
-    month_panel = figure.axes[1]                            # second row, first zone
-    assert month_panel.get_ylabel() == "Mean hours per year, by month"
+    month_panel = figure.axes[1]                            # first zone, second column
+    assert month_panel.get_title() == "Mean hours per year, by month"

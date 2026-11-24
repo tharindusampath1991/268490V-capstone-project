@@ -73,10 +73,11 @@ def test_plot_price_vs_inputs_writes_a_png_and_marks_a_missing_input(tmp_path, d
     figure = plot_price_vs_inputs(drivers, medians, -50.0, 150.0, path)
 
     assert_png(path)
-    panels = np.array(figure.axes[:8]).reshape(4, 2)       # four inputs, two zones
-    assert panels[0][0].get_title() == "AA"
-    assert panels[2][0].axison                             # AA has a solar forecast
-    assert not panels[2][1].axison                         # BB has none
+    panels = np.array(figure.axes[:8]).reshape(2, 4)       # two zones, four inputs
+    assert panels[0][0].get_ylabel().startswith("AA")
+    assert panels[1][0].get_ylabel().startswith("BB")
+    assert panels[0][2].axison                             # AA has a solar forecast
+    assert not panels[1][2].axison                         # BB has none
 
 
 def test_plot_price_vs_inputs_writes_no_file_without_a_path(tmp_path, drivers):
@@ -117,8 +118,9 @@ def test_plot_shares_by_bin_writes_a_png_with_one_row_per_flag(tmp_path, drivers
     figure = plot_shares_by_bin(shares, "Title", "Tenth of the residual load", path)
 
     assert_png(path)
-    assert len(figure.axes) == 4
-    assert figure.axes[0].get_ylabel() == "Low"
+    panels = np.array(figure.axes).reshape(2, 2)           # two zones, two kinds of flag
+    assert [ax.get_ylabel() for ax in panels[:, 0]] == ["AA", "BB"]
+    assert [ax.get_title() for ax in panels[0]] == ["Low", "High"]
 
 
 def test_plot_quarter_hours_writes_a_png(tmp_path):
@@ -150,8 +152,24 @@ def test_plot_regime_writes_a_png(tmp_path, drivers):
     figure = plot_regime(profiles, medians, {name: name for name in stats.PERIODS}, path)
 
     assert_png(path)
-    assert len(figure.axes) == 4
-    assert len(figure.axes[0].get_lines()) == 3
+    panels = np.array(figure.axes).reshape(2, 2)           # two zones, two kinds of panel
+    assert [ax.get_ylabel() for ax in panels[:, 0]] == ["AA", "BB"]
+    assert len(panels[0][0].get_lines()) == 3
+    assert len(panels[1][1].get_lines()) == 3
+
+
+def test_plot_group_profiles_wraps_after_four_zones(drivers):
+    table = drivers["AA"]
+    groups = pd.Series(np.where(table[stats.WIND] > 1500.0, "high", "low"), index=table.index)
+    profile = stats.hour_profile_by_group(table["price"], groups, MARKET_TZ, ["low", "high"])
+    profiles = {f"Z{number}": profile for number in range(1, 8)}
+
+    figure = plot_group_profiles(profiles, {"low": "Little wind", "high": "Much wind"},
+                                 "Title", "Price")
+
+    assert len(figure.axes) == 7
+    assert figure.get_size_inches()[0] == pytest.approx(4 * 4.2)
+
 
 def test_plot_sweden_writes_a_png_with_three_panels(tmp_path):
     years = [2023, 2024, 2025]
