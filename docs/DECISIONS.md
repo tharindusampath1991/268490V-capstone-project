@@ -21,6 +21,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: Every line can be explained. `statsforecast` 2.1.1 requires pandas below 3.0, so a pandas 3 pin would have to change when the statistical baseline is added. A dry-run resolve of the full planned library set on 2026-11-20 chose pandas 2.3.3.
 - Alternative rejected: A full `pip freeze`. It is exact, but it lists packages the code never imports, and packages that pip installs only on Windows, such as `colorama`.
 - Exception, added 2026-11-20: numpy is pinned to 2.5.5 although the code does not import it. With numpy 2.5.5 and pandas 2.3.3, `pd.Timedelta(days=1)` raises a DeprecationWarning that says it "will raise an error in the future". `entsoe-py` 1.0.0 calls it in `query_day_ahead_prices`. An unpinned numpy could therefore break the price download on a later fresh install.
+- Update, 2026-11-24: The code imports numpy from this day on, first in `src/epf/seed.py` (entry 57). The pin stays for the reason above.
 - Exception, added 2026-11-22: pyarrow is pinned although the code does not import it. pandas needs it to read and write the Parquet files of the raw cache.
 
 ## 4. One shared ENTSO-E fetch-and-cache module
@@ -322,3 +323,67 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: One layout for both parts of the EDA. `holidays` 0.109 requires `python-dateutil` below 3, so installing it moved the installed 4.0.0 to 2.9.0.post0, and a fresh install resolves to the same version. It is an indirect dependency (entry 3). The 268 tests, the build and the six EDA 1 figures gave the same result before and after the install.
 - Alternative rejected: A pin for `python-dateutil`, as numpy has one. numpy is pinned because of a known warning (entry 3). No problem was seen here.
 - Limits: The proposal named 300 lines as the size at which `driver_stats.py` would be split. It reached 437. The 15-minute and two-zone functions moved to `spread_stats.py`, and `driver_stats.py` still has 349 lines. `driver_figures.py` reads `_period_note` of `price_figures.py`, a private helper, to avoid a copy.
+
+## 50. The seasonal naive forecast is scored on validation and on test in the same session
+- Date: 2026-11-24, decided by the owner
+- Decision: `python -m epf.evaluation.backtest --model naive --split validation` and the same command with `--split test` were each run once on 2026-11-24, the test run after the validation results were committed. No other model has seen the test days. No rule and no metric was changed after the test run.
+- Reason: The naive forecast has no tuned parameter, so its test score cannot be improved by looking at it. Every later model needs its MAE on the test days as the reference for relative MAE.
+- Alternative rejected: Keeping the test days closed until the final backtest of all models. The reference would then be computed in the same run as the models it judges, and a harness bug on the 25-hour day 2026-10-25 would show only at the end.
+- Limit: The numbers of the test run are known from now on. They must not steer any later choice.
+
+## 51. A model receives the inputs of one delivery day, cut at three midnights in market time
+- Date: 2026-11-24, proposal approved by the owner
+- Decision: `day_inputs` in `src/epf/evaluation/cutoff.py` cuts a table for delivery day D into a `DayInputs` object. The price ends before 00:00 Europe/Berlin on D. The day-ahead columns (load, wind and solar forecast) end before 00:00 on D+1. The delayed column `actual_load` ends before 00:00 on D-1. Each midnight is built from a calendar date, not by subtracting 24 hours. The config lists the columns under each cut (`backtest.price_column`, `day_ahead_columns`, `delayed_columns`), and a table column that is listed nowhere stops the run. The market time units of D come from `hourly_index` or `quarter_hour_index`, not from the table. A model has `fit(inputs)` and `predict(inputs)`. `run_days` in `backtest.py` refuses a forecast that is not on exactly those market time units, and sets the actual prices beside the forecast only after the model has answered. A validation run drops every row from `splits.test_start` on when it reads the table.
+- Reason: PROJECT_CONTEXT §5. The model holds copies that end at the cuts, so data after a cut cannot be reached, whatever the model does. The whole rule is one file of about 100 lines.
+- Tests: A recording model shows that nothing it receives in `fit` or `predict` lies after its cut, on days around the 25-hour day, hourly and 15-minute. A model that sums every value it receives gives the same forecast after every value behind the three cuts is changed, and another forecast when the last value before a cut is changed. A model that overwrites its inputs changes neither the table nor the actual prices. Each cut was also moved on purpose once: 16 or 17 tests failed each time.
+- Alternative rejected: One frame up to the end of D with the values a model may not see set to empty. It is handy for a feature builder, but a wrong mask then leaks silently, and "empty" would mean both "not known yet" and "a real gap".
+- Assumption: The day-ahead wind and solar forecast is taken as known before the 12:00 gate closure, although ENTSO-E allows it until 18:00 on D-1 (PROJECT_CONTEXT §5). The naive forecast does not use these columns.
+- Limits: Weather is not passed yet. `cutoff.py` is a file beyond the layout of the first plan. It is separate from `backtest.py` so that a model file can import `DayInputs` without a circular import.
+
+## 52. The naive forecast takes the same wall-clock time 7 days before, and 168 hours back where that time is missing or double
+- Date: 2026-11-24, proposal approved by the owner
+- Decision: `seasonal_naive` in `src/epf/models/naive.py` gives each market time unit of D the price at the same wall-clock time in Europe/Berlin `models.naive.lag_days` (7) calendar days earlier. Where that wall-clock time does not exist on D-7 or exists twice, it takes the price exactly 168 hours before the target. On a 25-hour D both 02:00 hours take the 02:00 price of D-7. When D-7 has 25 hours, 02:00 takes its second 02:00 hour. On a 23-hour D the 02:00 price of D-7 is not used. When D-7 has 23 hours, 02:00 takes its 01:00 price. A market time unit whose source is not in the history gets an empty forecast, and a scored run with an empty forecast fails.
+- Reason: PROJECT_CONTEXT §6 defines the model as the same local market time unit on D-7, and the daily price shape follows the local clock (entry 39). The test days hold both cases that matter: 2026-10-25 has 25 hours and 2026-11-01 has a D-7 of 25 hours. Every source lies on D-7, before the price cut of entry 51.
+- Alternative rejected: Always 168 hours back in UTC. It needs no special case. But in the 7 days after a clock change it reads the price one local hour off, and for the last hour of 2026-10-25 it reads a price of D-6.
+- Limit: `lag_days` is the definition of the model. It was not tuned.
+
+## 53. Metrics are pooled over market time units, and the losses per delivery day are kept
+- Date: 2026-11-24, proposal approved by the owner
+- Decision: `src/epf/evaluation/metrics.py` has `mae`, `rmse`, `relative_mae`, `pinball_loss`, `mean_pinball_loss`, `coverage` and `daily_losses`. With e as the actual price minus the forecast, MAE is the mean of |e| and RMSE the root of the mean of e², each over all market time units of one zone, experiment and split. Relative MAE is the MAE of the model divided by the MAE of the naive forecast on the same market time units. The harness always runs the naive forecast on the same days for this. The pinball loss at level q is the mean of max(q·e, (q − 1)·e), and coverage is the share of actual prices inside an interval, bounds included. `daily_losses` gives per delivery day the number of market time units, the MAE and the MSE. An empty value or a forecast on other timestamps raises an error.
+- Reason: Pooling gives every market time unit the same weight, and no metric divides by a price, which can be zero or negative. The daily losses are what the Diebold-Mariano test of M3 needs, and the pooled MAE can be recomputed from them.
+- Alternative rejected: The mean of daily values. For MAE it differs only through the days of 23 or 25 hours. For RMSE it is another quantity.
+- Limits: The naive forecast gives no quantiles, so pinball loss and coverage are tested but not yet in a results file. Relative MAE is not defined when the naive forecast has no error, and the function raises an error then.
+
+## 54. Results are committed per zone group, and forecasts per market time unit stay out of git
+- Date: 2026-11-24, proposal approved by the owner
+- Decision: The backtest writes to `reports/results/` (`paths.results`). `backtest_core.csv` and `backtest_extra.csv` hold one row per run, zone and experiment, with the model settings, the split, the seed, the metrics, the wall-clock time, the peak memory, the hardware and the config dates. Rows are only added. `daily_core.csv` and `daily_extra.csv` hold the losses per delivery day, and a new run replaces the rows of the same model, experiment, split and zone. The file name ends with the `group` of the config, so the Swedish zones have their own tables and no zone name is in the code. The forecasts per market time unit go to `data/forecasts/{model}/{experiment}/{split}/{ZONE}.parquet` (`paths.forecasts`), with the actual price beside each forecast. That folder is not committed. The core files are written before the extra zones start. A failed check writes nothing for its zone group.
+- Reason: The naive forecast is the ENTSO-E price of 7 days before, so a committed forecast file would be raw data in git, which CLAUDE.md forbids. The command writes the files again on any machine that has the processed tables. A log that only grows shows every run, also a second run on the test days.
+- Alternative rejected: Replacing the row of an earlier run in the log as well. The file would always show one row per result, but a repeated test run would leave no trace.
+- Correction, 2026-11-24: The first version read the saved files with the default pandas parser, which can return a number with another last digit. The test run therefore rewrote 273 saved validation cells, with a largest relative change of 8.0e-16. No printed number changed. The files are now read with `float_precision="round_trip"`, a test compares the saved lines as text, and the validation lines were restored from commit `762243f`. The test command was not run again. The body of commit `5cf0e37` says the validation rows were unchanged, which was wrong in the last digit.
+- Limits: `results.py` is a file beyond the layout of the first plan. Error slices by hour or by spike need the forecast files, which exist only where the command has run.
+
+## 55. Run time is read with `perf_counter` and peak memory with psutil, which is now pinned
+- Date: 2026-11-24, package approved by the owner
+- Decision: `wall_seconds` is `time.perf_counter()` around the day loop of one zone and experiment: the cuts, `fit` and `predict`, without reading the table or writing results. `peak_memory_mb` is `psutil.Process().memory_info().peak_wset`, the highest working set of the process, read after the loop. `hardware` is one line built from `platform` and `psutil`. `requirements.txt` pins `psutil` 7.2.2. It was already installed as a dependency of `ipykernel`, and a dry run of the install reported it as already satisfied.
+- Reason: The working set counts memory used by native code, so LightGBM and PyTorch will be measured the same way as the naive forecast. One readable line replaces about 20 lines of Windows API code.
+- Alternatives rejected: `tracemalloc` of the standard library, which counts only memory that Python allocates and slows the run. The Windows API through `ctypes`.
+- Limits: The peak never falls during one command, so the value of a row is the peak up to that zone. For the naive forecast it is mostly the imports: 138 to 161 MB. The field exists on Windows only. On another system the column is empty until a Linux reading is added and tested, which the Colab runs of M3 will need.
+
+## 56. Refit cadence and history length are config values with the defaults of the forecast protocol
+- Date: 2026-11-24, proposal approved by the owner
+- Decision: `backtest.refit_every_days` is 7 and `backtest.history_days` is null, which means every row from the first one. `run_days` calls `fit` on the first scored day and then every 7th delivery day. Both values are written into every results row.
+- Reason: These are the defaults of PROJECT_CONTEXT §5: a weekly refit on an expanding window. The naive forecast has nothing to fit, so neither value changes its result.
+- Alternative rejected: Choosing a history length now. It can only be judged with a model that trains, on the validation days. That belongs to the SARIMA or ETS step, since the train set holds three price regimes (entry 45).
+
+## 57. One helper sets the seed
+- Date: 2026-11-24
+- Decision: `set_seed` in `src/epf/seed.py` seeds the `random` module and the global numpy generator from `seed` in the config (42) and returns the seed. The backtest calls it at the start of a run and writes the seed into every results row. numpy is now imported by the code, so its note in `requirements.txt` says so and the exception of entry 3 has an update line.
+- Reason: CLAUDE.md asks for seeds set through one helper. The naive forecast uses no random number, so the seed does not change its result.
+- Limit: PyTorch is not seeded yet. That line is added with the first model that uses it.
+
+## 58. The test days are open only to the models listed in the config
+- Date: 2026-11-24, proposal approved by the owner
+- Decision: `backtest.test_models` lists the models that may be scored with `--split test`. It holds `naive` only. The command refuses any other model there and writes nothing.
+- Reason: CLAUDE.md says the test set is touched only by the final backtest. A list in the config makes opening the test days for a model a visible, logged change instead of a habit.
+- Alternative rejected: Relying on the rule in words only.
+- Limit: The list guards the backtest command. It does not stop other code from reading the processed tables, which hold the test days.

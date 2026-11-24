@@ -10,7 +10,7 @@ Owner: A A T Sampath (268490V) · Last updated: 2026-11-24
 | Title | Forecasting Next Day Electricity Prices in Europe with Time Series Foundation Models |
 | Repo | https://github.com/tharindusampath1991/268490V-capstone-project (public) |
 | Status on 19 Nov 2026 | M1 approved as submitted. ENTSO-E token in hand. No code yet. Roughly week 6 of 12 |
-| Status on 24 Nov 2026 | Data pipeline built through preprocessing for all 7 zones: downloads, cleaning, validation and the modelling tables. `DATA_END` is frozen at 2026-11-19 (§4). EDA 1 is done: prices of the core zones on train days, six figures and `notebooks/01_eda_prices.ipynb`. EDA 2 is done: the price against the load, wind and solar forecast, the 15-minute prices, the high-price period and holidays for the core zones, and one section on the Swedish zones, seven figures and `notebooks/01_eda_drivers.ipynb`. The backtest harness is not started (§9) |
+| Status on 24 Nov 2026 | Data pipeline built through preprocessing for all 7 zones: downloads, cleaning, validation and the modelling tables. `DATA_END` is frozen at 2026-11-19 (§4). EDA 1 is done: prices of the core zones on train days, six figures and `notebooks/01_eda_prices.ipynb`. EDA 2 is done: the price against the load, wind and solar forecast, the 15-minute prices, the high-price period and holidays for the core zones, and one section on the Swedish zones, seven figures and `notebooks/01_eda_drivers.ipynb`. The backtest harness, the metrics and the seasonal naive forecast are done, with the leakage tests. The naive forecast is scored on the validation and the test days for all 7 zones on experiments H and Q, by owner decision (DECISIONS entry 50), and the results are in `reports/results/`. SARIMA or ETS is not started (§9) |
 | Next deadline | M2 Technical Checkpoint, assumed Thu 3 Dec 2026 (confirm, §11) |
 | Grading | M1 25% · M2 25% · M3 50%. A viva can be called at any milestone |
 | AI tools | Allowed. I must understand, justify and explain every decision and result |
@@ -222,7 +222,9 @@ The Swedish zones run every model with the hyperparameters and context lengths c
 │   │                         # driver_stats.py, spread_stats.py, driver_plots.py, driver_figures.py (entry 49)
 │   ├── features/             # holiday_calendar.py
 │   ├── models/               # naive.py, stats.py, lgbm.py, chronos2.py, timesfm25.py
-│   ├── evaluation/           # backtest.py, metrics.py
+│   ├── evaluation/           # backtest.py, metrics.py, cutoff.py (the leakage rule, DECISIONS entry 51),
+│   │                         # results.py (results files, run time, memory, hardware, entries 54 and 55)
+│   ├── seed.py               # the one seed helper (entry 57)
 │   └── dashboard/            # Streamlit app (M3)
 ├── scripts/                  # check_coverage.py (day-1 gate)
 ├── notebooks/                # EDA only
@@ -259,7 +261,7 @@ The Swedish zones run every model with the hyperparameters and context lengths c
 | Wed 2 Dec | Record demo. Buffer | Video link |
 | Thu 3 Dec | Submit | |
 
-Status on 24 Nov 2026: the rows up to Tue 24 Nov are done. The Sun 22 Nov row, the Mon 23 Nov row (EDA 1) and the Tue 24 Nov row (EDA 2) all closed on Tue 24 Nov. The dates above are the original targets and have not been moved. The backtest harness, the row of Wed 25 Nov, is next.
+Status on 24 Nov 2026: the rows up to Tue 24 Nov are done. The Sun 22 Nov row, the Mon 23 Nov row (EDA 1) and the Tue 24 Nov row (EDA 2) all closed on Tue 24 Nov. The row of Wed 25 Nov (backtest harness, metrics, seasonal naive end to end) also closed on Tue 24 Nov, one day early. The dates above are the original targets and have not been moved. SARIMA or ETS through the harness, the row of Thu 26 Nov, is next.
 
 The Swedish zones ride along on every row through config. They get no day of their own, only one EDA section.
 

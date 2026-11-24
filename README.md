@@ -126,10 +126,31 @@ The notebook [notebooks/01_eda_drivers.ipynb](notebooks/01_eda_drivers.ipynb) ca
 .venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_drivers.ipynb
 ```
 
+## Backtest
+
+Every model runs through one backtest. For each delivery day D it gets only what is known on D-1 before the 12:00 gate closure: prices through D-1, the day-ahead load, wind and solar forecast for D, and actual load through D-2 (DECISIONS entry 51). It returns one forecast per market time unit of D.
+
+Once the tables are built, this scores the seasonal naive forecast on the 60 validation days:
+
+```
+.venv\Scripts\python -m epf.evaluation.backtest --model naive --split validation
+```
+
+- One run covers the hourly table (experiment H) and the 15-minute table (experiment Q) for all zones, core zones first.
+- The seasonal naive forecast is the price at the same local time 7 days before (DECISIONS entry 52). It is the reference for relative MAE.
+- The command prints its checks per zone and experiment and stops with an error when one fails.
+- Results go to `reports/results/`, which is committed. `backtest_core.csv` holds DE-LU, FR and ES. `backtest_extra.csv` holds SE1 to SE4, the extra zones that are not part of the approved Milestone 1 scope. Each row has the metrics, the model settings, the seed, the run time, the peak memory and the hardware. `daily_core.csv` and `daily_extra.csv` hold the losses per delivery day.
+- A run adds rows to the two `backtest_*.csv` files, so a second run shows as a second set of rows.
+- Forecasts per market time unit are saved under `data/forecasts/`, which git ignores.
+- `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config, which is the naive forecast alone (DECISIONS entries 50 and 58). That run was done once on 24 Nov 2026.
+
+MAE and RMSE are in EUR/MWh. Price levels differ several-fold between zones, so zones are compared on relative MAE only.
+
 ## Environment
 
 - Python 3.12.10, venv + pip, pinned `requirements.txt`.
-- Hardware: to be added.
+- Hardware: laptop, Lenovo 21RVCTO1WW, AMD Ryzen AI 9 HX PRO 370 with 12 cores and 24 threads, 59.6 GB RAM, AMD Radeon 890M integrated graphics, Windows 11 (10.0.26200). The backtest runs on the CPU. No GPU run has been made yet.
+- The backtest reads its peak memory on Windows only. On Linux or macOS the `peak_memory_mb` column stays empty (DECISIONS entry 55). The backtest has not been run on such a machine yet.
 
 ## Project documents
 
