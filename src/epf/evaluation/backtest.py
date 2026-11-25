@@ -50,6 +50,7 @@ from epf.evaluation import results
 from epf.evaluation.cutoff import Columns, DayInputs, check_columns, cut_columns, day_inputs
 from epf.evaluation.metrics import daily_losses, mae, relative_mae, rmse
 from epf.models.naive import SeasonalNaive
+from epf.models.stats import StatsModel
 from epf.seed import set_seed
 
 FORECAST = "forecast"
@@ -143,12 +144,19 @@ def checked_forecast(forecast: pd.Series, target_index: pd.DatetimeIndex) -> pd.
 def build_model(config: dict, name: str) -> Model:
     """Return the model with a name, set up from its entry under models in the config.
 
-    Raises ValueError for a name that has no entry.
+    The entry named naive is the seasonal naive forecast. Every other entry
+    is a statistical model and names its family.
+    Raises ValueError for a name that has no entry, for an entry without a
+        family and for settings that the model refuses.
     """
     entries = config["models"]
     if name not in entries:
         raise ValueError(f"Unknown model '{name}'. Known: {sorted(entries)}.")
-    return SeasonalNaive(entries[name]["lag_days"])
+    if name == SeasonalNaive.name:
+        return SeasonalNaive(entries[name]["lag_days"])
+    if "family" not in entries[name]:
+        raise ValueError(f"The model entry '{name}' names no family.")
+    return StatsModel(name, entries[name])
 
 
 def model_history(config: dict, name: str) -> int | None:

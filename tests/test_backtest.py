@@ -3,6 +3,7 @@
 They use small synthetic tables, a temporary folder, no network and no data files.
 """
 
+import json
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -505,3 +506,55 @@ def test_a_forecast_that_is_not_a_finite_number_fails_a_check():
 
     assert all(good.values())
     assert [name for name, passed in bad.items() if not passed] == ["every forecast is finite"]
+
+
+ETS_ENTRY = {"family": "ets", "form": "ANN", "season_days": [1], "history_days": 5}
+
+
+def test_run_scores_a_statistical_model_from_its_config_entry(tmp_path):
+    config = project_config(tmp_path)
+    config["models"]["ets_short"] = ETS_ENTRY
+    save_tables(config)
+
+    run(config, "ets_short", "validation", experiments=["H"])
+
+    core = saved(config, "backtest_core.csv")
+    assert core["model"].tolist() == ["ets_short"]
+    assert core["history_days"].tolist() == [5]
+    assert json.loads(core["model_params"][0]) == ETS_ENTRY
+    # The price of a day is one above the day before, and this form forecasts the last level.
+    assert core["mae"][0] == pytest.approx(1.0, abs=0.01)
+    assert core["relative_mae"][0] == pytest.approx(1 / 7, abs=0.01)
+    forecasts = Path(config["paths"]["forecasts"]) / "ets_short" / "H" / "validation" / "A.parquet"
+    assert len(pd.read_parquet(forecasts)) == 120
+
+
+def test_the_naive_reference_keeps_all_history_when_the_model_has_a_short_one(tmp_path):
+    # With the 5 days of the model entry the reference would hold no price of D-7.
+    config = project_config(tmp_path)
+    config["models"]["ets_short"] = ETS_ENTRY
+    save_tables(config)
+
+    run(config, "ets_short", "validation", experiments=["H"])
+
+    core = saved(config, "backtest_core.csv")
+    assert core["naive_mae"].tolist() == [7.0]
+    assert core["empty_forecasts"].tolist() == [0]
+
+
+def test_run_refuses_a_model_entry_with_an_unknown_family(tmp_path):
+    config = project_config(tmp_path)
+    config["models"]["oracle"] = {**ETS_ENTRY, "family": "prophet"}
+    save_tables(config)
+
+    with pytest.raises(SystemExit, match="prophet"):
+        run(config, "oracle", "validation")
+
+
+def test_run_refuses_a_model_entry_without_a_family(tmp_path):
+    config = project_config(tmp_path)
+    config["models"]["naive_14"] = {"lag_days": 14}
+    save_tables(config)
+
+    with pytest.raises(SystemExit, match="naive_14.*family"):
+        run(config, "naive_14", "validation")
