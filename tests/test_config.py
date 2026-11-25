@@ -122,7 +122,7 @@ def test_project_config_holds_the_backtest_defaults_of_the_forecast_protocol():
 
     assert config["backtest"]["refit_every_days"] == 7
     assert config["backtest"]["history_days"] is None
-    assert config["backtest"]["test_models"] == ["naive"]
+    assert config["backtest"]["test_models"] == ["naive", config["backtest"]["statistical_baseline"]]
     assert build_model(config, "naive").params == {"lag_days": 7}
 
 

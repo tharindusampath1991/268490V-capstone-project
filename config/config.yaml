@@ -87,7 +87,8 @@ backtest:
   # validation days of experiment H. Never change it.
   statistical_baseline: mstl_182
   # Models that may be scored on the test days. Every other model is refused there.
-  test_models: [naive]
+  # mstl_182 was added on 2026-11-25, after it was frozen and the owner said yes.
+  test_models: [naive, mstl_182]
   price_column: price             # known through the end of D-1
   day_ahead_columns:              # day-ahead forecasts, known through the end of D
     - load_forecast
