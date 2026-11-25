@@ -156,3 +156,12 @@ def test_project_config_holds_candidates_of_the_three_statistical_families():
     entries = load_config()["models"].values()
 
     assert {entry["family"] for entry in entries if "family" in entry} == {"arima", "ets", "mstl"}
+
+
+def test_project_config_names_a_frozen_statistical_baseline_that_is_a_model_entry():
+    config = load_config()
+
+    name = config["backtest"]["statistical_baseline"]
+
+    assert "family" in config["models"][name]
+    assert build_model(config, name).name == name

@@ -82,6 +82,10 @@ backtest:
   # Days of history a model receives when its entry under models names none. null: all, from
   # the first row. The naive reference of every run receives this value.
   history_days: null
+  # The statistical baseline, frozen on 2026-11-25 (docs/DECISIONS.md, entry 64). Of the 15
+  # candidates under models it had the lowest mean relative MAE over the seven zones on the
+  # validation days of experiment H. Never change it.
+  statistical_baseline: mstl_182
   # Models that may be scored on the test days. Every other model is refused there.
   test_models: [naive]
   price_column: price             # known through the end of D-1
