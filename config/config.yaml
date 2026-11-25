@@ -79,7 +79,9 @@ backtest:
   # Defaults of PROJECT_CONTEXT section 5. They were not tuned. Their tuning belongs to
   # the first model that trains.
   refit_every_days: 7             # fit is called on the first scored day and every 7th day after it
-  history_days: null              # days of history a model receives. null: all, from the first row
+  # Days of history a model receives when its entry under models names none. null: all, from
+  # the first row. The naive reference of every run receives this value.
+  history_days: null
   # Models that may be scored on the test days. Every other model is refused there.
   test_models: [naive]
   price_column: price             # known through the end of D-1
@@ -91,10 +93,38 @@ backtest:
   delayed_columns:                # known through the end of D-2
     - actual_load
 
-# Model settings, copied into every results row.
+# Model settings, copied into every results row. --model of the backtest takes a name from here.
 models:
   naive:
     lag_days: 7   # the price of the same local market time unit 7 days before. A definition, not tuned.
+
+  # Candidates for the statistical baseline, compared on the validation days of all seven
+  # zones on experiment H. They read the price history only.
+  #   family        arima (AutoARIMA), ets (AutoETS) or mstl (MSTL) of statsforecast
+  #   season_days   season lengths in days. One day is 24 hourly or 96 quarter-hour steps.
+  #   history_days  days of prices before the delivery day that the model is fitted on
+  #   form          ets: letters for error, trend and season. A additive, N none, Z chosen
+  #                 by the model among none and additive. The error is always A, because a
+  #                 multiplicative form cannot take a negative price.
+  #   trend_form    mstl: the ETS form that forecasts the trend. It has no season.
+  #   search        arima: arguments of AutoARIMA that limit the search for the orders.
+  #                 Without it the search has the defaults of statsforecast.
+  ets_28:  {family: ets, form: AZA, season_days: [1], history_days: 28}
+  ets_56:  {family: ets, form: AZA, season_days: [1], history_days: 56}
+  ets_91:  {family: ets, form: AZA, season_days: [1], history_days: 91}
+  ets_182: {family: ets, form: AZA, season_days: [1], history_days: 182}
+  ets_364: {family: ets, form: AZA, season_days: [1], history_days: 364}
+  # The season is left to the model here. On train days it chose no season.
+  ets_auto_56: {family: ets, form: AZZ, season_days: [1], history_days: 56}
+  mstl_28:  {family: mstl, trend_form: AZN, season_days: [1, 7], history_days: 28}
+  mstl_56:  {family: mstl, trend_form: AZN, season_days: [1, 7], history_days: 56}
+  mstl_91:  {family: mstl, trend_form: AZN, season_days: [1, 7], history_days: 91}
+  mstl_182: {family: mstl, trend_form: AZN, season_days: [1, 7], history_days: 182}
+  mstl_364: {family: mstl, trend_form: AZN, season_days: [1, 7], history_days: 364}
+  arima_28: {family: arima, season_days: [1], history_days: 28}
+  arima_small_28: {family: arima, search: {max_p: 2, max_q: 2, max_P: 1, max_Q: 1}, season_days: [1], history_days: 28}
+  arima_small_56: {family: arima, search: {max_p: 2, max_q: 2, max_P: 1, max_Q: 1}, season_days: [1], history_days: 56}
+  arima_small_91: {family: arima, search: {max_p: 2, max_q: 2, max_P: 1, max_Q: 1}, season_days: [1], history_days: 91}
 
 # EDA 1 (docs/DECISIONS.md, entry 38). An hour is a spike when its price is above the mean
 # plus spike_sd standard deviations of the spike_window_days days before it. Both numbers

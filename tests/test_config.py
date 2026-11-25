@@ -143,3 +143,16 @@ def test_project_config_places_every_approved_column_under_exactly_one_cut():
     for tables in approved.values():
         for name in (HOURLY, QUARTER_HOUR):
             assert set(tables[name]) <= set(listed)
+
+
+def test_project_config_builds_every_model_entry_under_its_own_name():
+    config = load_config()
+
+    for name in config["models"]:
+        assert build_model(config, name).name == name
+
+
+def test_project_config_holds_candidates_of_the_three_statistical_families():
+    entries = load_config()["models"].values()
+
+    assert {entry["family"] for entry in entries if "family" in entry} == {"arima", "ets", "mstl"}
