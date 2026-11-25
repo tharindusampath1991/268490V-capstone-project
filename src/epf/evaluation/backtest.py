@@ -5,16 +5,20 @@ Usage, from the repo root:
 
 One run scores a model on the validation or the test days, for experiment H
 (hourly table) and experiment Q (15-minute table) and every zone of the
-config. The core zones run first and their files are written before the extra
-zones start. The test days are open only to the models listed under
-backtest.test_models.
+config. --experiment H or --experiment Q runs one of the two. The core zones
+run first and their files are written before the extra zones start. The test
+days are open only to the models listed under backtest.test_models.
+
+A model is an entry under models in the config, and --model takes its name.
+An entry may hold history_days, the days of history the model receives. An
+entry without it uses backtest.history_days.
 
 For every delivery day the loop cuts the table with day_inputs (see
 epf.evaluation.cutoff), hands the result to the model and takes back one
 forecast per market time unit. The actual prices of the day stay here and are
 set beside the forecast only after the model has answered.
 
-A model has two methods:
+A model has a name, its settings as params, and two methods:
     fit(inputs)      called on the first scored day and then every
                      refit_every_days delivery days
     predict(inputs)  returns a price series on inputs.target_index
@@ -34,6 +38,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Protocol
 
+import numpy as np
 import pandas as pd
 
 from epf.config import GROUP_ORDER, REPO_ROOT, Zone, load_config, ordered_zones
@@ -62,8 +67,6 @@ ROW_COLUMNS = [
 Day = tuple[pd.Timestamp, pd.Timestamp]   # 00:00 market time on D and on D+1
 MakeIndex = Callable[[pd.Timestamp, pd.Timestamp], pd.DatetimeIndex]
 
-MODEL_NAMES = [SeasonalNaive.name]
-
 # Experiment name to its table and the function that gives the market time units.
 EXPERIMENTS: dict[str, tuple[str, MakeIndex]] = {
     "H": (HOURLY, hourly_index),
@@ -72,7 +75,12 @@ EXPERIMENTS: dict[str, tuple[str, MakeIndex]] = {
 
 
 class Model(Protocol):
-    """What the backtest loop asks of a model."""
+    """What the backtest asks of a model."""
+
+    name: str
+
+    @property
+    def params(self) -> dict: ...
 
     def fit(self, inputs: DayInputs) -> None: ...
 
@@ -132,14 +140,31 @@ def checked_forecast(forecast: pd.Series, target_index: pd.DatetimeIndex) -> pd.
     return forecast.astype(float).rename(FORECAST)
 
 
-def build_model(config: dict, name: str) -> SeasonalNaive:
-    """Return the model with a name, set up from the models section of the config.
+def build_model(config: dict, name: str) -> Model:
+    """Return the model with a name, set up from its entry under models in the config.
 
-    Raises ValueError for a name that is not a model of the backtest.
+    Raises ValueError for a name that has no entry.
     """
-    if name == SeasonalNaive.name:
-        return SeasonalNaive(config["models"][name]["lag_days"])
-    raise ValueError(f"Unknown model '{name}'. Known: {MODEL_NAMES}.")
+    entries = config["models"]
+    if name not in entries:
+        raise ValueError(f"Unknown model '{name}'. Known: {sorted(entries)}.")
+    return SeasonalNaive(entries[name]["lag_days"])
+
+
+def model_history(config: dict, name: str) -> int | None:
+    """Return the days of history a model receives. None means every row from the first one.
+
+    The value is history_days of the model entry, or backtest.history_days
+    when the entry does not have it.
+    """
+    return config["models"][name].get("history_days", config["backtest"]["history_days"])
+
+
+def check_experiments(experiments: list[str]) -> None:
+    """Refuse an experiment name that is not a key of EXPERIMENTS."""
+    unknown = [name for name in experiments if name not in EXPERIMENTS]
+    if unknown:
+        raise ValueError(f"Unknown experiments {unknown}. Known: {list(EXPERIMENTS)}.")
 
 
 def check_split_allowed(config: dict, model_name: str, split: str) -> None:
@@ -198,7 +223,7 @@ def matches_price_before(scored: pd.DataFrame, prices: pd.Series, day: Day,
 def count_checks(scored: pd.DataFrame, reference: pd.DataFrame,
                  expected_index: pd.DatetimeIndex, expected_days: int,
                  market_tz: str) -> dict[str, bool]:
-    """Check the scored days, the market time units and that no forecast is empty.
+    """Check the scored days, the market time units and that every forecast is a number.
 
     Input: the scored frames of the model and of the naive reference, the
         market time units of the split, its number of delivery days and the
@@ -210,6 +235,7 @@ def count_checks(scored: pd.DataFrame, reference: pd.DataFrame,
         f"{expected_days} scored days": scored_days == expected_days,
         f"{len(expected_index)} market time units": scored.index.equals(expected_index),
         "no empty forecast": empty_forecasts(scored, reference) == 0,
+        "every forecast is finite": not np.isinf(scored[FORECAST]).any(),
     }
 
 
@@ -254,7 +280,7 @@ def daily_rows(scored: pd.DataFrame, row: dict, market_tz: str) -> pd.DataFrame:
     return daily
 
 
-def backtest_zone(config: dict, zone: Zone, experiment: str, split: str, model: SeasonalNaive,
+def backtest_zone(config: dict, zone: Zone, experiment: str, split: str, model: Model,
                   run_info: dict) -> ZoneResult:
     """Run one zone and experiment, score it and run the checks.
 
@@ -262,21 +288,24 @@ def backtest_zone(config: dict, zone: Zone, experiment: str, split: str, model: 
         the split, the model and the row values that are the same for the whole run.
     Output: the results row, the daily losses, the forecasts and the checks.
         When the count of days or market time units is wrong or a forecast is
-        empty, the row and the daily losses are empty and only the checks say why.
+        empty or infinite, the row and the daily losses are empty and only the
+        checks say why. The model receives the history length of its own
+        entry. The naive reference always receives backtest.history_days.
     """
     table_name, make_index = EXPERIMENTS[experiment]
     market_tz = config["market"]["timezone"]
     start, end = split_range(config, split)
     days = delivery_days(start, end)
     columns = cut_columns(config)
-    refit, history = config["backtest"]["refit_every_days"], config["backtest"]["history_days"]
+    refit = config["backtest"]["refit_every_days"]
     lag_days = config["models"][SeasonalNaive.name]["lag_days"]
     table = read_table(config, table_name, zone.key, end)
 
-    scored, seconds = run_days(table, days, make_index, model, columns, refit, history)
+    scored, seconds = run_days(table, days, make_index, model, columns, refit,
+                               model_history(config, model.name))
     peak = results.peak_memory_mb()
     reference, _ = run_days(table, days, make_index, SeasonalNaive(lag_days), columns, refit,
-                            history)
+                            config["backtest"]["history_days"])
 
     checks = count_checks(scored, reference, make_index(start, end),
                           config["splits"][f"{split}_days"], market_tz)
@@ -296,9 +325,9 @@ def backtest_zone(config: dict, zone: Zone, experiment: str, split: str, model: 
     return ZoneResult(row, daily_rows(scored, row, market_tz), scored, checks)
 
 
-def run_group(config: dict, group: str, zones: list[Zone], split: str, model: SeasonalNaive,
-              run_info: dict) -> None:
-    """Run both experiments for the zones of one group, then write the files of the group.
+def run_group(config: dict, group: str, zones: list[Zone], split: str, model: Model,
+              run_info: dict, experiments: list[str]) -> None:
+    """Run the experiments for the zones of one group, then write the files of the group.
 
     Output: nothing. Prints one line of numbers and one line of checks per
         zone and experiment. Ends with an error and writes nothing when a
@@ -306,7 +335,7 @@ def run_group(config: dict, group: str, zones: list[Zone], split: str, model: Se
     """
     print(f"\n===== {group} zones, {split} days, model {model.name} =====")
     outcomes = []
-    for experiment in EXPERIMENTS:
+    for experiment in experiments:
         for zone in zones:
             try:
                 outcome = backtest_zone(config, zone, experiment, split, model, run_info)
@@ -343,22 +372,27 @@ def print_outcome(zone_key: str, experiment: str, outcome: ZoneResult) -> None:
     print(f"{zone_key:6s} {experiment}  " + " | ".join(marks), flush=True)
 
 
-def run(config: dict, model_name: str, split: str) -> None:
+def run(config: dict, model_name: str, split: str, experiments: list[str] | None = None) -> None:
     """Score one model on the validation or the test days of every zone, core zones first.
 
-    Input: the config dictionary, a model name and the split, VALIDATION or TEST.
+    Input: the config dictionary, a model name, the split, VALIDATION or TEST,
+        and the experiments to run, keys of EXPERIMENTS. None runs all of them.
     Output: nothing. Prints numbers and checks and writes the results files
-        and the forecasts. Ends with an error for an unknown model or split,
-        for a model that may not see the test days, and for a failed check.
+        and the forecasts. Ends with an error for an unknown model, split or
+        experiment, for a model that may not see the test days, and for a
+        failed check.
     """
+    experiments = list(EXPERIMENTS) if experiments is None else experiments
     try:
         model = build_model(config, model_name)
         check_split_allowed(config, model_name, split)
         split_range(config, split)
+        check_experiments(experiments)
     except ValueError as error:
         sys.exit(str(error))
     settings = config["backtest"]
-    history = ALL_HISTORY if settings["history_days"] is None else settings["history_days"]
+    history = model_history(config, model_name)
+    history = ALL_HISTORY if history is None else history
     run_info = {
         "run_started_utc": pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%dT%H:%M:%SZ"),
         "model": model.name, "model_params": json.dumps(model.params), "split": split,
@@ -372,16 +406,19 @@ def run(config: dict, model_name: str, split: str) -> None:
     for group in GROUP_ORDER:
         group_zones = [zone for zone in zones if zone.group == group]
         if group_zones:
-            run_group(config, group, group_zones, split, model, run_info)
+            run_group(config, group, group_zones, split, model, run_info, experiments)
 
 
 def main() -> None:
-    """Read the model and the split from the command line and run the backtest."""
+    """Read the model, the split and the experiment from the command line and run the backtest."""
     parser = argparse.ArgumentParser(description="Score a model on the validation or test days.")
-    parser.add_argument("--model", required=True, choices=MODEL_NAMES)
+    parser.add_argument("--model", required=True, help="a name under models in the config")
     parser.add_argument("--split", required=True, choices=[VALIDATION, TEST])
+    parser.add_argument("--experiment", choices=list(EXPERIMENTS),
+                        help="run this experiment only. Without it all of them run")
     arguments = parser.parse_args()
-    run(load_config(), arguments.model, arguments.split)
+    experiments = None if arguments.experiment is None else [arguments.experiment]
+    run(load_config(), arguments.model, arguments.split, experiments)
 
 
 if __name__ == "__main__":

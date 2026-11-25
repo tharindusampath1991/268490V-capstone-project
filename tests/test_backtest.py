@@ -13,6 +13,7 @@ from epf.data.market_time import delivery_days, hourly_index, quarter_hour_index
 from epf.data.splits import split_range
 from epf.data.validate import HOURLY, QUARTER_HOUR, table_path
 from epf.evaluation.backtest import (
+    count_checks,
     lag_check_days,
     matches_price_before,
     read_table,
@@ -429,3 +430,78 @@ def test_matches_price_before_compares_the_forecast_with_the_price_168_hours_ear
 
     assert matches_price_before(scored, table["price"], day, lag_days=7)
     assert not matches_price_before(wrong, table["price"], day, lag_days=7)
+
+
+def test_run_with_one_experiment_scores_that_table_only(tmp_path):
+    config = project_config(tmp_path)
+    save_tables(config)
+
+    run(config, "naive", "validation", experiments=["Q"])
+
+    core = saved(config, "backtest_core.csv")
+    assert core["experiment"].tolist() == ["Q"]
+    assert core["mtus"].tolist() == [480]
+    assert set(saved(config, "daily_core.csv")["experiment"]) == {"Q"}
+
+
+def test_run_refuses_an_unknown_experiment(tmp_path):
+    config = project_config(tmp_path)
+    save_tables(config)
+
+    with pytest.raises(SystemExit, match="X"):
+        run(config, "naive", "validation", experiments=["X"])
+
+    assert not Path(config["paths"]["results"]).exists()
+
+
+def test_the_history_length_of_a_model_entry_goes_into_its_results_rows(tmp_path):
+    config = project_config(tmp_path)
+    config["models"]["naive"]["history_days"] = 10
+    save_tables(config)
+
+    run(config, "naive", "validation", experiments=["H"])
+
+    assert saved(config, "backtest_core.csv")["history_days"].tolist() == [10]
+
+
+def test_a_model_entry_without_a_history_length_uses_the_backtest_default(tmp_path):
+    config = project_config(tmp_path)
+    save_tables(config)
+
+    run(config, "naive", "validation", experiments=["H"])
+
+    assert saved(config, "backtest_core.csv")["history_days"].tolist() == ["all"]
+
+
+def test_a_model_receives_only_the_history_length_of_its_entry(tmp_path):
+    # 3 days of history hold no price of D-7, so every naive forecast is empty.
+    config = project_config(tmp_path)
+    config["models"]["naive"]["history_days"] = 3
+    save_tables(config)
+
+    with pytest.raises(SystemExit, match="no empty forecast"):
+        run(config, "naive", "validation", experiments=["H"])
+
+
+class Infinite:
+    """A model that forecasts infinity."""
+
+    def fit(self, inputs: DayInputs) -> None:
+        pass
+
+    def predict(self, inputs: DayInputs) -> pd.Series:
+        return pd.Series(float("inf"), index=inputs.target_index)
+
+
+def test_a_forecast_that_is_not_a_finite_number_fails_a_check():
+    table = make_table("2026-06-20", "2026-07-05")
+    days = days_from("2026-07-01", 2)
+    expected = hourly_index(market_time("2026-07-01"), market_time("2026-07-03"))
+    reference, _ = run_days(table, days, hourly_index, SeasonalNaive(lag_days=7), COLUMNS, 7)
+    infinite, _ = run_days(table, days, hourly_index, Infinite(), COLUMNS, 7)
+
+    good = count_checks(reference, reference, expected, 2, MARKET_TZ)
+    bad = count_checks(infinite, reference, expected, 2, MARKET_TZ)
+
+    assert all(good.values())
+    assert [name for name, passed in bad.items() if not passed] == ["every forecast is finite"]
