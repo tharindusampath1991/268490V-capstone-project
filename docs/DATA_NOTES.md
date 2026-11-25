@@ -62,6 +62,14 @@ Check on 2026-11-23 at 01:27 market time, delivery days up to 2026-11-22. The co
 - The last delivery day before the holes that is complete in all zones is 2026-11-19.
 - No price in the period of the cross-check changed between 2026-11-22 and 2026-11-23, so the cross-check was not run again.
 
+Check on 2026-11-25 at 03:15 and 03:18 market time, after `DATA_END` was frozen. `fetch_prices` was called for one delivery day at a time. Nothing was saved, and no raw file was downloaded again.
+
+- DE_LU now has delivery day 2026-11-20: 96 prices with a day mean of 214.51 EUR/MWh, which equals the Energy-Charts day mean noted on 2026-11-23.
+- DE_LU and FR still have no price for 2026-11-21. ES and SE_3 returned 96 prices for that day in the same check.
+- DE_LU and FR have 96 prices on 2026-11-19, 2026-11-22, 2026-11-23 and 2026-11-24. One request for 2026-11-20 to 2026-11-22 returned 96 prices on the first and the last day and none on the middle day, in both zones.
+- So ENTSO-E can publish a missing day later, here after more than three days, and one day is still missing in two zones.
+- `DATA_END` stays 2026-11-19 (DECISIONS entry 29). The day 2026-11-20 is outside the data period, so no table changes.
+
 Before the switch the client resamples each answer to hourly values with `resample('h').first()` (read from the source). A missing hour inside an answer can therefore arrive as a row with an empty price. The check counts an empty price as missing.
 
 ## Raw ENTSO-E cache
