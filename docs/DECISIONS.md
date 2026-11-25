@@ -381,6 +381,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: `backtest.refit_every_days` is 7 and `backtest.history_days` is null, which means every row from the first one. `run_days` calls `fit` on the first scored day and then every 7th delivery day. Both values are written into every results row.
 - Reason: These are the defaults of PROJECT_CONTEXT §5: a weekly refit on an expanding window. The naive forecast has nothing to fit, so neither value changes its result.
 - Alternative rejected: Choosing a history length now. It can only be judged with a model that trains, on the validation days. That belongs to the SARIMA or ETS step, since the train set holds three price regimes (entry 45).
+- Update, 2026-11-25: The history length is now a value of each model entry, and `backtest.history_days` is the value for an entry without one (entry 65). The statistical baseline uses 182 days (entry 64).
 
 ## 57. One helper sets the seed
 - Date: 2026-11-24
@@ -394,6 +395,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: CLAUDE.md says the test set is touched only by the final backtest. A list in the config makes opening the test days for a model a visible, logged change instead of a habit.
 - Alternative rejected: Relying on the rule in words only.
 - Limit: The list guards the backtest command. It does not stop other code from reading the processed tables, which hold the test days.
+- Update, 2026-11-25: The list also holds `mstl_182`, the frozen statistical baseline (entries 64 and 67). The 14 candidates that lost are refused on the test days.
 
 ## 59. SE_1 to SE_4 are core zones
 - Date: 2026-11-24, decided by the owner
@@ -417,3 +419,85 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: From now on the backtest writes all seven zones to the core files. The naive forecast is the reference for relative MAE, so its Swedish rows must be in the same file as the models compared with it. The naive test run may not be repeated (entry 50).
 - Alternatives rejected by the owner: Leaving the two files as they were, so that later tables read both. Running validation and test again, which would have been a second test run.
 - Limits: The `group` cell of these 16 rows no longer shows the group the zones had when the runs were made. The run time stamp does: the runs are of 2026-11-24, before the change, and entry 59 gives the date. `docs/coverage_gate.md` still lists SE_1 to SE_4 as extra zones with a verdict. It is the report of 24 Nov 2026 and is not written again (PROJECT_CONTEXT §3.1).
+
+## 62. `statsforecast` 2.1.1 is pinned, and the statistical models read the price history only
+- Date: 2026-11-25, package approved by the owner after a dry run
+- Decision: `requirements.txt` pins `statsforecast` 2.1.1. The install added 16 dependencies (adagio, cloudpickle, coreforecast, formulaic, fsspec, fugue, interface-meta, narwhals, patsy, scipy, statsmodels, threadpoolctl, tqdm, triad, utilsforecast, wrapt) and moved no existing pin. `StatsModel` in `src/epf/models/stats.py` wraps `AutoARIMA`, `AutoETS` and `MSTL` as one model of the backtest, set up from a config entry with a `family`. It reads `inputs.prices` and nothing else: no load, wind, solar or weather input, and no prediction interval. Season lengths are given in days (`season_days`) and multiplied by the market time units per day, which the model reads from the step of the target index. So one entry means 24 and 168 steps on the hourly table and 96 and 672 on the 15-minute table. No Box-Cox argument is set, and the code refuses `blambda` and `biasadj`. Every ETS form has the error `A`, and the code refuses any other form. The trend model inside MSTL is `AutoETS(model="AZN")`, not the default `ZZN`.
+- Reason: PROJECT_CONTEXT §6 names `statsforecast` for the statistical baseline. Prices go negative, so no transform and no multiplicative form may be used. The installed source shows that with the error `A` every multiplicative trend and season is skipped. The defaults `ZZZ` and `ZZN` leave the multiplicative error to the data: it is skipped only when the window holds a price of zero or below.
+- Alternative rejected: The default forms. A window with positive prices only could then get a multiplicative model, and the form would differ between zones and weeks for a reason that has nothing to do with the forecast.
+- Limits: `statsforecast` counts steps, not clock hours. After a clock change the daily pattern sits one step off until the model has adapted. The validation days hold no clock change. The test days hold 2026-10-25. `approximation=True` makes the ARIMA search faster, but it printed 243 "possible convergence problem" warnings in six timed fits on train days and is not used.
+
+## 63. Between two weekly fits the fitted model is applied to the newest prices with `forward`
+- Date: 2026-11-25, proposal approved by the owner
+- Decision: `fit` is called on the first scored day and then every 7th delivery day (`backtest.refit_every_days`, entry 56). It receives the `history_days` calendar days of prices that end at the price cut of that day. On every delivery day `predict` calls `forward(y, h)` of `statsforecast` with the window that ends at the price cut of that day. `h` is the number of market time units of D: 23, 24 or 25 hours, or 92, 96 or 100 quarter-hours. The installed source shows what `forward` keeps. For ARIMA it keeps the orders and passes the coefficients as fixed values. For ETS it keeps the form, the smoothing parameters and the initial state. For MSTL it decomposes the window again and keeps only the fitted trend model.
+- Reason: PROJECT_CONTEXT §5 sets a weekly refit. The price of D-1 is known when D is forecast, and `forward` is the way to use it without estimating again. The `cross_validation` of the library does the same with a whole number as `refit`. Its documentation says: "If False, fits once and uses the forward method. If an integer n, refits every n windows. Models must implement the `forward` method when refit is not True." (https://nixtlaverse.nixtla.io/statsforecast/src/core/core.html, read 2026-11-25).
+- Checks: On train days `forward` on the fit window gave exactly the result of `predict` for all three families, and a second fit on the same window gave the same forecast. So `predict` has one code path. Tests on synthetic frames: a 23-hour and a 25-hour day give 23 and 25 forecasts, and 92 and 100 on the 15-minute grid. A forecast between two fits changes when the last price before its cut changes, and stays the same when every value after the cuts changes. The price cut was moved on purpose once: 23 tests failed, 6 of them tests of the new models.
+- Alternatives rejected: A new fit every day, which is 60 fits per zone where the weekly refit has 9. Forecasting up to 7 days ahead from the last fit, which would ignore the prices that arrive in between.
+- Limits: MSTL decomposes every day anyway, so its weekly fit fixes the trend model only. The initial state of an ETS model belongs to the start of the fit window, and the window moves on by one day at a time. On train days of DE_LU, moving the start of the window by one hour changed one forecast by at most 0.29 EUR/MWh.
+
+## 64. `mstl_182` is the statistical baseline, chosen from 15 settings on the validation days
+- Date: 2026-11-25. The owner chose the three families before the session, approved the 15 settings and the rule before any full run, and approved the winner after the comparison
+- Candidates: 15 settings, each an entry under `models` in the config. `ets_28`, `ets_56`, `ets_91`, `ets_182` and `ets_364` are `AutoETS` with a season of one day and the form `AZA`, on 28 to 364 days of history. `ets_auto_56` has the form `AZZ`, which leaves the season to the model. `mstl_28` to `mstl_364` are `MSTL` with seasons of one day and one week and the same five history lengths. `arima_28` is `AutoARIMA` with a season of one day and the default search. `arima_small_28`, `arima_small_56` and `arima_small_91` limit the search to `max_p=2, max_q=2, max_P=1, max_Q=1`. History lengths are whole weeks.
+- Season lengths: Measured on train days before any run. On the last 364 train days of the hourly table the strength of the daily season is 0.46 to 0.80 in DE_LU, FR, ES, SE_3 and SE_4 and 0.20 to 0.21 in SE_1 and SE_2. The strength of the weekly season is 0.22 to 0.36. Strength is 1 minus the variance of the remainder over the variance of season plus remainder, from an MSTL decomposition. The 15-minute table gives 0.47 to 0.78, 0.22 to 0.23 and 0.23 to 0.38.
+- Rule, fixed before the runs: The winner is the setting with the lowest mean relative MAE over the seven zones on the validation days of experiment H, among the settings whose run passes every check. Run time is reported and does not decide.
+- Result: 60 validation days, 2026-06-23 to 2026-08-21, 1440 hours per zone. Every run passed every check. Milestone 1 approved DE_LU, FR and ES only. SE_1 to SE_4 were added afterwards (entries 1 and 59). SE_1 and SE_2 are near-duplicates (entry 48), so the mean counts the north of Sweden about twice. Run time is the sum of the seven day loops in seconds.
+
+| Setting | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean | Run time |
+|---|---|---|---|---|---|---|---|---|---|
+| `mstl_182` | 0.7106 | 0.6521 | 0.7165 | 0.7317 | 0.6666 | 0.6596 | 0.6837 | 0.6887 | 565.9 |
+| `mstl_364` | 0.7106 | 0.6520 | 0.7165 | 0.7373 | 0.6706 | 0.6596 | 0.6838 | 0.6901 | 1314.7 |
+| `mstl_91` | 0.7133 | 0.6538 | 0.7161 | 0.7382 | 0.6647 | 0.6612 | 0.6839 | 0.6902 | 281.8 |
+| `mstl_56` | 0.7358 | 0.6686 | 0.7208 | 0.7645 | 0.6931 | 0.6771 | 0.6900 | 0.7071 | 205.0 |
+| `arima_28` | 0.7805 | 0.7380 | 0.8053 | 0.6925 | 0.6529 | 0.6711 | 0.6870 | 0.7182 | 5254.9 |
+| `arima_small_28` | 0.7917 | 0.7353 | 0.8808 | 0.6527 | 0.6511 | 0.6806 | 0.6763 | 0.7241 | 923.4 |
+| `arima_small_56` | 0.7844 | 0.7321 | 0.8697 | 0.6961 | 0.6434 | 0.6793 | 0.6830 | 0.7269 | 1529.5 |
+| `arima_small_91` | 0.8106 | 0.7786 | 0.8601 | 0.6550 | 0.6599 | 0.6691 | 0.6804 | 0.7305 | 3143.9 |
+| `mstl_28` | 0.7764 | 0.6997 | 0.7378 | 0.8319 | 0.7824 | 0.6920 | 0.7020 | 0.7460 | 104.0 |
+| `ets_56` | 0.9255 | 0.7698 | 0.8481 | 0.6952 | 0.6586 | 0.6752 | 0.6868 | 0.7513 | 10.5 |
+| `ets_28` | 0.9607 | 0.7739 | 0.8522 | 0.6903 | 0.6693 | 0.6712 | 0.6934 | 0.7587 | 5.7 |
+| `ets_91` | 0.9894 | 0.7783 | 0.8419 | 0.6767 | 0.6539 | 0.6810 | 0.6960 | 0.7596 | 17.1 |
+| `ets_182` | 0.9674 | 0.7925 | 0.8538 | 0.6754 | 0.6657 | 0.7064 | 0.7547 | 0.7737 | 34.0 |
+| `ets_364` | 1.0155 | 0.8010 | 0.8646 | 0.6775 | 0.6668 | 0.6910 | 0.7520 | 0.7812 | 180.0 |
+| `ets_auto_56` | 1.5910 | 1.5868 | 1.2686 | 0.7314 | 0.6902 | 0.8390 | 0.9348 | 1.0917 | 17.8 |
+
+- Decision: `backtest.statistical_baseline` is `mstl_182`: `MSTL(season_length=[24, 168], trend_forecaster=AutoETS(model="AZN"))` on the hourly table, fitted on the 182 days before the delivery day. 15 settings were tried in all, and their 105 rows are in `reports/results/backtest_core.csv`. The 14 settings that lost never see the test days.
+- What the numbers support: The three best settings are a tie. A bootstrap over the 60 days, 2000 resamples of whole days with seed 42, gives a difference to `mstl_182` of +0.0015 for `mstl_364` (95% interval -0.0032 to +0.0073) and +0.0014 for `mstl_91` (-0.0029 to +0.0056). `mstl_182` is first in the first 30 days and `mstl_91` in the last 30. MSTL against ARIMA is not settled on 60 days either: `arima_28` is +0.0286 (-0.0218 to +0.0797). `mstl_56` (+0.0047 to +0.0334) and `ets_56` (+0.0043 to +0.1306) are behind. Without SE_2 the order of the top three is the same. The zones disagree: an MSTL setting is best in DE_LU, FR, ES and SE_3, and an `arima_small` setting in SE_1, SE_2 and SE_4, the zones with the weakest daily season. One setting serves all zones (entry 59), so the rule decides.
+- Checks: DE_LU was run twice in memory for `mstl_182`, `ets_56` and `arima_small_28`. Both runs gave the saved MAE to the last digit. The MAE and the relative MAE of all 105 rows were computed again from the forecast files without the harness metrics, with no difference. The lowest relative MAE of any setting in any zone is 0.6434. The published LightGBM range is 0.42 to 0.48 (PROJECT_CONTEXT §7), so no price-only setting raises a leakage alarm.
+- Alternatives rejected: Choosing the family by its name in the Milestone 1 plan, without a comparison. Choosing `mstl_91`, which takes half the run time and is inside the noise of the winner: the rule was fixed before the runs, and changing it afterwards would be a choice made with the results in hand.
+- Limits: The winner was picked among 15 settings on the same 60 days, so 0.6887 is somewhat optimistic. The 60 days are one summer. `ets_auto_56` chose no season and forecasts one flat value per day: on train days its AICc was lower without a season (18517 against 19324 in DE_LU), because the criterion scores one step ahead. ARIMA got no history above 91 days and the default search none above 28, because one fit on 56 days took 277 seconds. No history above 364 days was tried. The whole comparison took about 3 hours 50 minutes against an estimate of 2.3 hours, because the ARIMA runs were about 2.5 times slower than one timed fit suggested.
+
+## 65. A model is a config entry, with its own history length, and the backtest can run one experiment
+- Date: 2026-11-25, proposal approved by the owner
+- Decision: `--model` of the backtest takes any name under `models` in the config. The entry `naive` is the seasonal naive forecast, and every other entry names a `family` and is built as a `StatsModel` (entry 62). An entry may hold `history_days`. Without it the model receives `backtest.history_days`. The naive reference inside every run always receives `backtest.history_days`, so the `naive_mae` of a row equals the naive row of the same zone and split. `--experiment H` or `--experiment Q` runs one experiment, and without the option both run. Every model has one new check, "every forecast is finite". The two naive checks of entry 52 stay with the naive model only. `results.py` did not change.
+- Reason: Entry 56 left the history length to the first model that trains. Each setting has its own model name, so its rows in `daily_core.csv` and its forecast files replace nothing. The candidates were compared on experiment H only, which needs a way to run H alone.
+- Alternative rejected: One model name with the setting as a further key column of the results files. It would have changed the key of `daily_core.csv` and the path of the saved forecasts.
+- Limit: `refit_every_days` stays one value for all models. It was not tuned.
+
+## 66. Experiment Q runs the frozen setting only, with seasons of 96 and 672 quarter-hours
+- Date: 2026-11-25, default approved by the owner before the runs
+- Decision: `mstl_182` was scored on the validation days of experiment Q with the same config entry. Its `season_days` of 1 and 7 are 96 and 672 quarter-hours there. No other candidate was run on experiment Q.
+- Result: 60 validation days, 5760 quarter-hours per zone, every check passed. The relative MAE is 0.6611 in DE_LU, 0.6528 in FR, 0.7160 in ES, 0.7267 in SE_1, 0.6682 in SE_2, 0.6617 in SE_3 and 0.6955 in SE_4, with a mean of 0.6831. The seven day loops took 10603 seconds in total, about 2 hours 57 minutes, and the peak memory was 219 MB. SE_1 to SE_4 were added after Milestone 1, and SE_1 and SE_2 are near-duplicates.
+- Reason: One setting per model (entry 59), and the setting is chosen on experiment H (entry 64). A comparison of all 15 settings on the 15-minute table was not affordable: one `AutoARIMA` fit with a season of 96 took 1034 seconds on 28 days of DE_LU train prices.
+- Alternative rejected: A second comparison on experiment Q with its own winner. It would give the statistical baseline two settings.
+- Limits: The setting was not tuned on the 15-minute prices. The run takes about 19 times as long as on the hourly table (10603 against 566 seconds), because `forward` decomposes a window of 17472 values again on every delivery day.
+
+## 67. `mstl_182` was scored on the test days once
+- Date: 2026-11-25, approved by the owner after the comparison
+- Decision: The frozen setting was committed first (`bdf41d5`). Then `mstl_182` was added to `backtest.test_models` (`31bfb35`), and `python -m epf.evaluation.backtest --model mstl_182 --split test` was run once, from 19:04 to 23:48 on 2026-11-25, for experiments H and Q. No other candidate has seen the test days. No setting, rule or metric was changed after the run.
+- Result: 90 test days, 2026-08-22 to 2026-11-19, 2161 hours and 8644 quarter-hours per zone. Every check passed. Milestone 1 approved DE_LU, FR and ES only. SE_1 to SE_4 were added afterwards, and SE_1 and SE_2 are near-duplicates. MAE and RMSE are in EUR/MWh.
+
+| Zone | H relative MAE | H MAE | H RMSE | Q relative MAE | Q MAE | Q RMSE |
+|---|---|---|---|---|---|---|
+| DE_LU | 0.4831 | 33.30 | 47.13 | 0.4901 | 33.94 | 48.18 |
+| FR | 0.5151 | 32.64 | 45.32 | 0.5182 | 33.14 | 45.63 |
+| ES | 0.6137 | 28.21 | 39.65 | 0.6181 | 28.69 | 40.35 |
+| SE_1 | 0.6439 | 20.12 | 30.28 | 0.6496 | 20.77 | 31.03 |
+| SE_2 | 0.6486 | 23.64 | 35.72 | 0.6466 | 24.03 | 35.92 |
+| SE_3 | 0.5499 | 31.84 | 42.93 | 0.5512 | 32.15 | 43.44 |
+| SE_4 | 0.5116 | 40.90 | 57.43 | 0.5101 | 41.15 | 57.95 |
+| Mean | 0.5666 | | | 0.5691 | | |
+
+- Cost: The 14 day loops took 17007 seconds, about 4 hours 43 minutes, of which about 17 minutes were experiment H. The peak memory was 249 MB.
+- Checks after the run: The `naive_mae` of all 14 new rows equals the MAE of the saved naive test rows. `git diff` shows 14 added lines in `backtest_core.csv` and 1260 in `daily_core.csv`, and no removed line. Three DE_LU forecasts were made again from a table that ends at the price cut of the day: the first test day, the 25-hour day 2026-10-25 and 2026-10-29. Each equals the saved forecast exactly.
+- Why the relative MAE is lower than on the validation days: The mean over the zones fell from 0.6887 to 0.5666 on experiment H. The MAE of `mstl_182` rose from 20.33 to 30.09, and the MAE of the naive forecast rose from 29.63 to 54.83. So the ratio is lower because the price of 7 days before was a much worse forecast in the autumn, not because the model became more accurate. The DE_LU value of 0.4831 is above the published per-hour LightGBM value of about 0.42 for that zone, and the Swedish values of 0.51 to 0.65 are above the published 0.43 to 0.48 (PROJECT_CONTEXT §7, another period). No value raises a leakage alarm.
+- Limits: The test numbers are known from now on. They must not steer any later choice. The test days hold the clock change of 2026-10-25, after which the model sits one step off the local clock until it has adapted (entry 62). The error of those days was not looked at separately. The baseline uses no load, wind, solar or weather input.

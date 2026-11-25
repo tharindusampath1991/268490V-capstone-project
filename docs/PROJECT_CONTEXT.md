@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — CS5998 Capstone
 
-Owner: A A T Sampath (268490V) · Last updated: 2026-11-24
+Owner: A A T Sampath (268490V) · Last updated: 2026-11-25
 
 ## 0. Snapshot
 
@@ -11,6 +11,7 @@ Owner: A A T Sampath (268490V) · Last updated: 2026-11-24
 | Repo | https://github.com/tharindusampath1991/268490V-capstone-project (public) |
 | Status on 19 Nov 2026 | M1 approved as submitted. ENTSO-E token in hand. No code yet. Roughly week 6 of 12 |
 | Status on 24 Nov 2026 | Data pipeline built through preprocessing for all 7 zones: downloads, cleaning, validation and the modelling tables. `DATA_END` is frozen at 2026-11-19 (§4). EDA 1 is done: prices of the core zones on train days, six figures and `notebooks/01_eda_prices.ipynb`. EDA 2 is done: the price against the load, wind and solar forecast, the 15-minute prices, the high-price period and holidays for the core zones, and one section on the Swedish zones, seven figures and `notebooks/01_eda_drivers.ipynb`. The backtest harness, the metrics and the seasonal naive forecast are done, with the leakage tests. The naive forecast is scored on the validation and the test days for all 7 zones on experiments H and Q, by owner decision (DECISIONS entry 50), and the results are in `reports/results/`. Also on 24 Nov 2026 SE1–SE4 became core zones: both EDA parts were redone for all seven zones, and the naive results of all seven zones are in `backtest_core.csv` and `daily_core.csv`. SARIMA or ETS is not started (§9) |
+| Status on 25 Nov 2026 | The statistical baseline is done for all 7 zones. `statsforecast` 2.1.1 is pinned. AutoARIMA, AutoETS and MSTL run through the same backtest from `src/epf/models/stats.py`, on the price history only. 15 settings were compared on the validation days of experiment H, and by a rule fixed before the runs the winner is `mstl_182`: MSTL with a daily and a weekly season on 182 days of history (DECISIONS entries 62 to 65). Its mean relative MAE over the seven zones is 0.6887 on validation. The three best settings are a tie inside the noise. `mstl_182` was also scored on experiment Q validation (0.6831, entry 66) and once on the test days by owner decision: 0.5666 on H and 0.5691 on Q (entry 67). The lower test values come from a naive forecast that was much worse in the autumn. All rows are in `backtest_core.csv` and `daily_core.csv`. LightGBM is not started (§9) |
 | Next deadline | M2 Technical Checkpoint, assumed Thu 3 Dec 2026 (confirm, §11) |
 | Grading | M1 25% · M2 25% · M3 50%. A viva can be called at any milestone |
 | AI tools | Allowed. I must understand, justify and explain every decision and result |
@@ -223,7 +224,8 @@ All seven zones run every model. Hyperparameters, history length and context len
 │   ├── eda/                  # price_stats.py, price_plots.py, price_figures.py (DECISIONS entry 37),
 │   │                         # driver_stats.py, spread_stats.py, driver_plots.py, driver_figures.py (entry 49)
 │   ├── features/             # holiday_calendar.py
-│   ├── models/               # naive.py, stats.py, lgbm.py, chronos2.py, timesfm25.py
+│   ├── models/               # naive.py, stats.py (ARIMA, ETS and MSTL, DECISIONS entries 62 and 63),
+│   │                         # lgbm.py, chronos2.py, timesfm25.py
 │   ├── evaluation/           # backtest.py, metrics.py, cutoff.py (the leakage rule, DECISIONS entry 51),
 │   │                         # results.py (results files, run time, memory, hardware, entries 54 and 55)
 │   ├── seed.py               # the one seed helper (entry 57)
@@ -236,6 +238,7 @@ All seven zones run every model. Hyperparameters, history length and context len
 ```
 
 - Zones come from config. Adding a zone is a config entry, never a code change. No zone names in code.
+- Each model setting is an entry under `models` in the config, and `--model` of the backtest takes its name. An entry may hold its own `history_days`. `backtest.statistical_baseline` names the frozen statistical model, `mstl_182`. The 14 candidates that lost stay in the config so that their rows can be reproduced (DECISIONS entries 64 and 65).
 - Config marks each zone as `core` or `extra`. All seven zones are `core` since 24 Nov 2026 and no zone is `extra`. The group does not record what M1 approved. A run still processes core zones before extra zones, should a zone be marked `extra` again.
 - Tooling: Claude Code in the repo writes and runs code. The Claude Project is for planning, review, report and viva prep.
 - `docs/PROJECT_CONTEXT.md` is the master copy of this file. Re-upload it to the Project when it changes.
@@ -264,6 +267,8 @@ All seven zones run every model. Hyperparameters, history length and context len
 | Thu 3 Dec | Submit | |
 
 Status on 24 Nov 2026: the rows up to Tue 24 Nov are done. The Sun 22 Nov row, the Mon 23 Nov row (EDA 1) and the Tue 24 Nov row (EDA 2) all closed on Tue 24 Nov. The row of Wed 25 Nov (backtest harness, metrics, seasonal naive end to end) also closed on Tue 24 Nov, one day early. The dates above are the original targets and have not been moved. Also on Tue 24 Nov SE1–SE4 were made core zones, and both EDA parts were redone for seven zones. SARIMA or ETS through the harness, the row of Thu 26 Nov, is next.
+
+Status on 25 Nov 2026: the row of Thu 26 Nov closed on Wed 25 Nov, one day early. The statistical baseline is `mstl_182`, chosen from 15 settings of ARIMA, ETS and MSTL on the validation days of all seven zones, and scored once on the test days (DECISIONS entries 62 to 67). It was also run on experiment Q, so the cut "statistical baseline on experiment Q" was not needed. LightGBM features, the row of Fri 27 Nov, is next.
 
 All seven zones are on every row through config. Since 24 Nov 2026 every EDA section covers the Swedish zones too (DECISIONS entries 59 and 60).
 

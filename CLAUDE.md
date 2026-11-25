@@ -37,7 +37,7 @@ Scope, forecast protocol, models, plan: @docs/PROJECT_CONTEXT.md
 ## Commands
 Fill in as they come to exist.
 - Setup: `python3.12 -m venv .venv`, then `.venv\Scripts\python -m pip install -r requirements.txt`
-- Tests: `.venv\Scripts\python -m pytest`
+- Tests: `.venv\Scripts\python -m pytest` (about 40 seconds)
 - Download prices: `.venv\Scripts\python -m epf.data.download_prices` (first full run: about 80 minutes)
 - Download forecasts: `.venv\Scripts\python -m epf.data.download_forecasts` (load forecast and wind and solar forecast. Current year only: about 20 minutes. Run one ENTSO-E download at a time, they share one cache manifest)
 - Download actual load: `.venv\Scripts\python -m epf.data.download_actual_load` (first full run: about 75 minutes)
@@ -49,7 +49,7 @@ Fill in as they come to exist.
 - EDA notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_prices.ipynb` (about 16 seconds. It calls the figure functions and writes no PNG file)
 - Driver figures: `.venv\Scripts\python -m epf.eda.driver_figures` (about 13 seconds, after the build. EDA 2: the price against the load, wind and solar forecast, 15-minute prices, the high-price period and holidays, for all seven core zones. The solar figure holds DE_LU, FR and ES only, since Sweden has no solar forecast. The last figure compares SE_1 to SE_4 with each other. Train days only. Prints the numbers and writes seven PNG files to `reports/figures/`)
 - EDA 2 notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_drivers.ipynb` (about 19 seconds. It calls the figure functions and writes no PNG file)
-- Backtest: `.venv\Scripts\python -m epf.evaluation.backtest --model naive --split validation` (after the build. All 7 core zones, experiments H and Q. The day loops of the naive run took about 3 seconds in total. Prints the checks, adds rows to `reports/results/backtest_core.csv`, writes `daily_core.csv`, and saves the forecasts under `data/forecasts/`. `--split test` works only for a model listed under `backtest.test_models`. The naive test run was done once on 24 Nov 2026. Do not run it again without asking)
+- Backtest: `.venv\Scripts\python -m epf.evaluation.backtest --model naive --split validation` (after the build. `--model` takes a name under `models` in the config. All 7 core zones, experiments H and Q, or one of them with `--experiment H` or `--experiment Q`. Prints the checks, adds rows to `reports/results/backtest_core.csv`, writes `daily_core.csv`, and saves the forecasts under `data/forecasts/`. The day loops of the naive run took about 3 seconds in total. `mstl_182`, the frozen statistical baseline, took about 10 minutes on H and about 3 hours on Q for the validation days. An ARIMA candidate took 15 to 88 minutes on H alone. `--split test` works only for a model listed under `backtest.test_models`. The naive test run was done once on 24 Nov 2026 and the `mstl_182` test run once on 25 Nov 2026, in about 4 hours 45 minutes. Do not run either again without asking)
 
 ## Commits
 - No type prefixes such as `feat:`, `docs:` or `data:`. They read as machine-written. Start the subject with a capital letter and a verb, for example "Add price downloader".

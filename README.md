@@ -32,7 +32,7 @@ On Linux or macOS, use `.venv/bin/python` in the second command.
 
 The second command also installs the project's own package, `src/epf`, in editable mode.
 
-Run the tests with `.venv\Scripts\python -m pytest`. They use no network and no data files.
+Run the tests with `.venv\Scripts\python -m pytest`. They use no network and no data files, and take about 40 seconds.
 
 ## ENTSO-E token
 
@@ -141,16 +141,42 @@ Once the tables are built, this scores the seasonal naive forecast on the 60 val
 .venv\Scripts\python -m epf.evaluation.backtest --model naive --split validation
 ```
 
-- One run covers the hourly table (experiment H) and the 15-minute table (experiment Q) for all seven zones.
+- `--model` takes a name under `models` in `config/config.yaml`.
+- One run covers the hourly table (experiment H) and the 15-minute table (experiment Q) for all seven zones. `--experiment H` or `--experiment Q` runs one of the two.
 - The seasonal naive forecast is the price at the same local time 7 days before (DECISIONS entry 52). It is the reference for relative MAE.
 - The command prints its checks per zone and experiment and stops with an error when one fails.
 - Results go to `reports/results/`, which is committed. `backtest_core.csv` holds one row per run, zone and experiment for all seven zones. Each row has the metrics, the model settings, the seed, the run time, the peak memory and the hardware. `daily_core.csv` holds the losses per delivery day.
 - SE1 to SE4 are in the same files as DE-LU, FR and ES. Milestone 1 did not approve them, and every results table in the report will say so.
 - A run adds rows to `backtest_core.csv`, so a second run shows as a second set of rows.
 - Forecasts per market time unit are saved under `data/forecasts/`, which git ignores.
-- `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config, which is the naive forecast alone (DECISIONS entries 50 and 58). That run was done once on 24 Nov 2026.
+- `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config: the naive forecast and `mstl_182`, the statistical baseline (DECISIONS entries 50, 58 and 67). Each of the two test runs was done once, on 24 and on 25 Nov 2026.
 
 MAE and RMSE are in EUR/MWh. Price levels differ several-fold between zones, so zones are compared on relative MAE only.
+
+### Statistical baseline
+
+The statistical baseline is `mstl_182`: MSTL from `statsforecast` with a daily and a weekly season, fitted on the prices of the 182 days before the delivery day. It reads the price history only, with no load, wind, solar or weather input.
+
+- It was chosen from 15 settings: AutoARIMA, AutoETS and MSTL with several history lengths. All 15 ran on the 60 validation days of experiment H for all seven zones, and the setting with the lowest mean relative MAE won. The rule was fixed before the runs. The rows of all 15 are in `backtest_core.csv`, and the full table is in DECISIONS entry 64.
+- The three best settings, MSTL on 91, 182 and 364 days, lie within 0.0015 of each other. That is inside the noise of 60 days.
+- The model is fitted every 7 days. On the days between, the fitted model is applied to the newest prices and nothing is estimated again (DECISIONS entry 63).
+- No transform is used and every ETS form is additive, because prices go negative (DECISIONS entry 62).
+- `mstl_182` takes about 10 minutes on experiment H and about 3 hours on experiment Q for the validation days.
+
+Relative MAE of `mstl_182` against the seasonal naive forecast. Milestone 1 approved DE-LU, FR and ES only. SE1 to SE4 were added afterwards, and SE1 and SE2 are near-duplicates.
+
+| Zone | Validation, H | Validation, Q | Test, H | Test, Q |
+|---|---|---|---|---|
+| DE_LU | 0.7106 | 0.6611 | 0.4831 | 0.4901 |
+| FR | 0.6521 | 0.6528 | 0.5151 | 0.5182 |
+| ES | 0.7165 | 0.7160 | 0.6137 | 0.6181 |
+| SE_1 (added after M1) | 0.7317 | 0.7267 | 0.6439 | 0.6496 |
+| SE_2 (added after M1) | 0.6666 | 0.6682 | 0.6486 | 0.6466 |
+| SE_3 (added after M1) | 0.6596 | 0.6617 | 0.5499 | 0.5512 |
+| SE_4 (added after M1) | 0.6837 | 0.6955 | 0.5116 | 0.5101 |
+| Mean | 0.6887 | 0.6831 | 0.5666 | 0.5691 |
+
+The test values are lower than the validation values because the naive forecast was much worse on the test days. Its mean MAE on experiment H rose from 29.63 to 54.83 EUR/MWh, and that of `mstl_182` from 20.33 to 30.09 (DECISIONS entry 67).
 
 ## Environment
 
