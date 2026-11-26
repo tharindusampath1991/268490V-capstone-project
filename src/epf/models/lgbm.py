@@ -74,8 +74,8 @@ class LgbmModel:
         self.columns = columns
         self.rule = rule
         self.seed = seed
-        self.booster = None
-        self.feature_names = None
+        self.booster: lightgbm.Booster | None = None
+        self.feature_names: list[str] | None = None
 
     @property
     def params(self) -> dict:
@@ -87,11 +87,18 @@ class LgbmModel:
 
         The trees and the feature names of an earlier fit are replaced, so a
         model can be fitted on one table after another.
+        Raises ValueError when there is no training day, and when LightGBM
+            refuses the fit, for example for a parameter value it does not
+            allow.
         """
         rows, target = training_rows(inputs, self.features, self.columns, self.rule)
-        self.booster = lightgbm.train(train_params(self.settings, self.seed),
-                                      lightgbm.Dataset(rows, label=target),
-                                      num_boost_round=self.settings["trees"])
+        try:
+            self.booster = lightgbm.train(train_params(self.settings, self.seed),
+                                          lightgbm.Dataset(rows, label=target),
+                                          num_boost_round=self.settings["trees"])
+        except lightgbm.basic.LightGBMError as error:
+            raise ValueError(f"LightGBM refused the fit of the entry '{self.name}': "
+                             f"{error}") from error
         self.feature_names = list(rows.columns)
 
     def predict(self, inputs: DayInputs) -> pd.Series:
@@ -99,9 +106,12 @@ class LgbmModel:
 
         The trees of the last fit are applied to the features of this day,
         which are built from its inputs. Nothing is fitted again.
-        Raises ValueError when the features are not those of the fit, in
-            name or in order.
+        Raises ValueError when the model has not been fitted, and when the
+            features are not those of the fit, in name or in order.
         """
+        if self.booster is None:
+            raise ValueError(f"The model '{self.name}' has not been fitted, so it cannot "
+                             f"forecast {inputs.delivery_day}.")
         rows = day_features(inputs, self.features, inputs.holidays)
         # LightGBM takes the columns by their position and does not compare the names.
         if list(rows.columns) != self.feature_names:
@@ -114,13 +124,14 @@ def check_settings(settings: dict, features: FeatureSettings) -> None:
     """Refuse an entry that the model cannot run as it is written.
 
     Input: the settings of a config entry and the feature settings of the config.
-    Raises ValueError for a missing or an unknown key, another family, no
-        group, a group that the feature settings do not build, an objective
-        outside OBJECTIVES, a number of trees that is not a whole number
-        above 0, a parameter key outside ALLOWED_PARAMS and a history that is
-        not longer than the longest lag of the features.
+    Raises ValueError for what check_keys and check_kinds refuse, and for
+        another family, no group, a group that the feature settings do not
+        build, an objective outside OBJECTIVES, a number of trees below 1, a
+        parameter key outside ALLOWED_PARAMS and a history that is not longer
+        than the longest lag of the features.
     """
     check_keys(settings)
+    check_kinds(settings)
     problems = []
     if settings["family"] != FAMILY:
         problems.append(f"the family is '{settings['family']}', not '{FAMILY}'")
@@ -130,9 +141,8 @@ def check_settings(settings: dict, features: FeatureSettings) -> None:
                  for group in settings["groups"] if group not in features.groups]
     if settings["objective"] not in OBJECTIVES:
         problems.append(f"the objective '{settings['objective']}' is not among {OBJECTIVES}")
-    trees = settings["trees"]
-    if not isinstance(trees, int) or trees < 1:
-        problems.append(f"trees must be a whole number above 0, not {trees}")
+    if settings["trees"] < 1:
+        problems.append(f"trees must be above 0, not {settings['trees']}")
     # LightGBM ignores a key it does not know without an error, and a round count among
     # the parameters would replace the number of trees of the entry.
     refused = [key for key in settings["params"] if key not in ALLOWED_PARAMS]
@@ -142,8 +152,7 @@ def check_settings(settings: dict, features: FeatureSettings) -> None:
     if history is not None and history <= longest_lag:
         problems.append(f"{HISTORY} is {history} and the longest lag of the features is "
                         f"{longest_lag} days, so no training day is left")
-    if problems:
-        raise ValueError("LightGBM entry: " + "; ".join(problems) + ".")
+    refuse(problems)
 
 
 def check_keys(settings: dict) -> None:
@@ -151,6 +160,38 @@ def check_keys(settings: dict) -> None:
     problems = [f"the key '{key}' is missing" for key in REQUIRED_KEYS if key not in settings]
     problems += [f"the key '{key}' is unknown" for key in settings
                  if key not in (*REQUIRED_KEYS, HISTORY)]
+    refuse(problems)
+
+
+def check_kinds(settings: dict) -> None:
+    """Refuse an entry with a value of the wrong kind, before the values themselves are read.
+
+    Raises ValueError when groups is not a list, when params is not a
+        dictionary, and when trees, or a history_days that is set, is not a
+        whole number.
+    """
+    problems = []
+    if not isinstance(settings["groups"], list):
+        problems.append(f"groups must be a list, not {settings['groups']!r}")
+    if not isinstance(settings["params"], dict):
+        problems.append("params must be a dictionary, {} for no parameter, not "
+                        f"{settings['params']!r}")
+    if not is_whole_number(settings["trees"]):
+        problems.append(f"trees must be a whole number, not {settings['trees']!r}")
+    history = settings.get(HISTORY)
+    if history is not None and not is_whole_number(history):
+        problems.append(f"{HISTORY} must be a whole number or empty, not {history!r}")
+    refuse(problems)
+
+
+def is_whole_number(value: object) -> bool:
+    """Return True for a whole number. True and False are not taken as 1 and 0."""
+    # In Python a bool is an int, so isinstance(True, int) holds.
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def refuse(problems: list[str]) -> None:
+    """Raise ValueError with the problems of an entry. Do nothing when there is none."""
     if problems:
         raise ValueError("LightGBM entry: " + "; ".join(problems) + ".")
 

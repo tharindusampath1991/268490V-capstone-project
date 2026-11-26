@@ -13,6 +13,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 
+import lightgbm
 import numpy as np
 import pandas as pd
 import pytest
@@ -175,6 +176,11 @@ def inputs_of(table: pd.DataFrame, day: str = DAY, make_index=hourly_index,
 def assert_identical(first: pd.Series, second: pd.Series) -> None:
     """Two forecasts must be equal to the last bit."""
     pd.testing.assert_series_equal(first, second, check_exact=True)
+
+
+def on_day(index: pd.DatetimeIndex, day: str) -> np.ndarray:
+    """True for the market time units of one delivery day."""
+    return np.asarray((index >= market_time(day)) & (index < market_time(day_after(day))))
 
 
 # The shape of a forecast.
@@ -425,6 +431,40 @@ def test_every_training_day_is_cut_as_if_it_were_forecast_on_its_own_day():
     assert rows[["temperature_2m", "actual_load_lag_2"]].notna().all().all()
 
 
+# 2026-06-25 is a training day of the fit for 2026-07-01. The inputs of that fit hold values
+# that were not known yet when 2026-06-25 itself was forecast.
+def test_values_behind_the_cuts_of_a_training_day_do_not_reach_its_rows():
+    day = "2026-06-25"
+    table, weather = make_table(), make_weather()
+    changed_table, changed_weather = change_after_the_cuts(table, weather, day)
+
+    before, _ = lgbm.training_rows(inputs_of(table, weather=weather), FEATURES, COLUMNS, RULE)
+    after, _ = lgbm.training_rows(inputs_of(changed_table, weather=changed_weather), FEATURES,
+                                  COLUMNS, RULE)
+
+    up_to_the_day = before.index < market_time(day_after(day))
+    assert on_day(before.index, day).sum() == 24
+    pd.testing.assert_frame_equal(before[up_to_the_day], after[up_to_the_day], check_exact=True)
+    # The later training days may read the changed values, and they do.
+    assert not before[~up_to_the_day].equals(after[~up_to_the_day])
+
+
+def test_weather_from_a_run_after_the_cut_of_a_training_day_does_not_reach_its_rows():
+    # The run of 2026-06-25 00:00 UTC started before the forecast of 2026-07-01, so the inputs
+    # of that day hold its rows. It had not started when 2026-06-25 itself was forecast.
+    day = "2026-06-25"
+    weather = make_weather()
+    weather.loc[on_day(weather.index, day), "run"] = pd.Timestamp(day, tz="UTC")
+    inputs = inputs_of(make_table(), weather=weather)
+
+    rows, _ = lgbm.training_rows(inputs, FEATURES, COLUMNS, RULE)
+
+    assert on_day(inputs.weather.index, day).sum() == 24
+    of_the_day = on_day(rows.index, day)
+    assert rows.loc[of_the_day, ["temperature_2m", "shortwave_radiation"]].isna().all().all()
+    assert rows.loc[~of_the_day, "temperature_2m"].notna().all()
+
+
 def test_the_training_rows_end_before_the_delivery_day_when_the_prices_reach_further():
     table = make_table()
     # Inputs that a wrong price cut would give: the prices run to the end of the table.
@@ -596,6 +636,11 @@ def test_a_forecast_from_other_features_than_those_of_the_fit_is_refused():
                                 make_index=quarter_hour_index))
 
 
+def test_a_forecast_before_any_fit_is_refused():
+    with pytest.raises(ValueError, match="'candidate' has not been fitted"):
+        model_with().predict(inputs_of(make_table()))
+
+
 # The settings of an entry.
 
 def test_the_settings_of_the_entry_are_the_params_for_the_results():
@@ -652,6 +697,21 @@ def test_wrong_settings_of_an_entry_are_refused(change, message):
         model_with({**ENTRY, **change})
 
 
+# An empty params key in the YAML file gives None, and True counts as the number 1 in Python.
+@pytest.mark.parametrize("change, message", [
+    ({"params": None}, "params"),
+    ({"params": ["num_leaves"]}, "params"),
+    ({"groups": None}, "groups"),
+    ({"groups": "price"}, "groups"),
+    ({"trees": True}, "trees"),
+    ({"history_days": "all"}, "history_days"),
+    ({"history_days": 30.5}, "history_days"),
+])
+def test_a_value_of_the_wrong_kind_is_refused(change, message):
+    with pytest.raises(ValueError, match=f"LightGBM entry: .*{message} must be"):
+        model_with({**ENTRY, **change})
+
+
 def test_a_group_that_the_feature_settings_do_not_build_is_refused():
     built = replace(FEATURES, groups=("price", "calendar"))
 
@@ -686,6 +746,15 @@ def test_every_allowed_parameter_key_is_accepted_and_reaches_lightgbm():
     assert sorted(params) == sorted(lgbm.ALLOWED_PARAMS)
     assert set(params) <= set(lgbm.train_params(entry, SEED))
     assert np.isfinite(forecast).all()
+
+
+def test_a_parameter_value_that_lightgbm_refuses_is_a_value_error_that_names_the_entry():
+    model = model_with({**ENTRY, "params": {"num_leaves": 1}})
+
+    with pytest.raises(ValueError, match="'candidate'.*num_leaves") as refused:
+        model.fit(inputs_of(make_table()))
+
+    assert isinstance(refused.value.__cause__, lightgbm.basic.LightGBMError)
 
 
 # The command. A small project in a temporary folder: zone A is core and has weather,
@@ -806,6 +875,17 @@ def test_run_refuses_a_lightgbm_entry_with_a_misspelt_parameter(tmp_path):
     save_tables(config)
 
     with pytest.raises(SystemExit, match="num_leafs"):
+        run(config, "lgbm_small", "validation")
+
+    assert not Path(config["paths"]["results"]).exists()
+
+
+def test_run_ends_with_one_line_for_a_parameter_value_that_lightgbm_refuses(tmp_path):
+    config = project_config(tmp_path)
+    config["models"]["lgbm_small"] = {**SMALL, "params": {"num_leaves": 1}}
+    save_tables(config)
+
+    with pytest.raises(SystemExit, match="A H: .*'lgbm_small'.*num_leaves"):
         run(config, "lgbm_small", "validation")
 
     assert not Path(config["paths"]["results"]).exists()
