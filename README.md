@@ -157,7 +157,7 @@ MAE and RMSE are in EUR/MWh. Price levels differ several-fold between zones, so 
 
 The statistical baseline is `mstl_182`: MSTL from `statsforecast` with a daily and a weekly season, fitted on the prices of the 182 days before the delivery day. It reads the price history only, with no load, wind, solar or weather input.
 
-- It was chosen from 15 settings: AutoARIMA, AutoETS and MSTL with several history lengths. All 15 ran on the 60 validation days of experiment H for all seven zones, and the setting with the lowest mean relative MAE won. The rule was fixed before the runs. The rows of all 15 are in `backtest_core.csv`, and the full table is in DECISIONS entry 64.
+- It was chosen from 15 settings: AutoARIMA, AutoETS and MSTL with several history lengths. All 15 ran on the 60 validation days of experiment H for all seven zones, and the setting with the lowest mean relative MAE won. The rule was fixed before the runs. The rows of all 15 are in `backtest_core.csv`. Every table, the run times and the checks are in [docs/MODEL_NOTES.md](docs/MODEL_NOTES.md), and the reasons are in DECISIONS entry 64.
 - The three best settings, MSTL on 91, 182 and 364 days, lie within 0.0015 of each other. That is inside the noise of 60 days.
 - The model is fitted every 7 days. On the days between, the fitted model is applied to the newest prices and nothing is estimated again (DECISIONS entry 63).
 - No transform is used and every ETS form is additive, because prices go negative (DECISIONS entry 62).
@@ -189,4 +189,5 @@ The test values are lower than the validation values because the naive forecast 
 - [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md): scope, forecast protocol, models, plan.
 - [docs/DECISIONS.md](docs/DECISIONS.md): numbered decisions with reasons.
 - [docs/DATA_NOTES.md](docs/DATA_NOTES.md): how the data is obtained and prepared.
+- [docs/MODEL_NOTES.md](docs/MODEL_NOTES.md): the measured results of each model, with settings, tables, run times and checks.
 - [docs/PROGRESS.md](docs/PROGRESS.md): one row per working day.

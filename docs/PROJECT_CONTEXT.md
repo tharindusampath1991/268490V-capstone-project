@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — CS5998 Capstone
 
-Owner: A A T Sampath (268490V) · Last updated: 2026-11-25
+Owner: A A T Sampath (268490V) · Last updated: 2026-11-26
 
 ## 0. Snapshot
 
@@ -11,7 +11,7 @@ Owner: A A T Sampath (268490V) · Last updated: 2026-11-25
 | Repo | https://github.com/tharindusampath1991/268490V-capstone-project (public) |
 | Status on 19 Nov 2026 | M1 approved as submitted. ENTSO-E token in hand. No code yet. Roughly week 6 of 12 |
 | Status on 24 Nov 2026 | Data pipeline built through preprocessing for all 7 zones: downloads, cleaning, validation and the modelling tables. `DATA_END` is frozen at 2026-11-19 (§4). EDA 1 is done: prices of the core zones on train days, six figures and `notebooks/01_eda_prices.ipynb`. EDA 2 is done: the price against the load, wind and solar forecast, the 15-minute prices, the high-price period and holidays for the core zones, and one section on the Swedish zones, seven figures and `notebooks/01_eda_drivers.ipynb`. The backtest harness, the metrics and the seasonal naive forecast are done, with the leakage tests. The naive forecast is scored on the validation and the test days for all 7 zones on experiments H and Q, by owner decision (DECISIONS entry 50), and the results are in `reports/results/`. Also on 24 Nov 2026 SE1–SE4 became core zones: both EDA parts were redone for all seven zones, and the naive results of all seven zones are in `backtest_core.csv` and `daily_core.csv`. SARIMA or ETS is not started (§9) |
-| Status on 25 Nov 2026 | The statistical baseline is done for all 7 zones. `statsforecast` 2.1.1 is pinned. AutoARIMA, AutoETS and MSTL run through the same backtest from `src/epf/models/stats.py`, on the price history only. 15 settings were compared on the validation days of experiment H, and by a rule fixed before the runs the winner is `mstl_182`: MSTL with a daily and a weekly season on 182 days of history (DECISIONS entries 62 to 65). Its mean relative MAE over the seven zones is 0.6887 on validation. The three best settings are a tie inside the noise. `mstl_182` was also scored on experiment Q validation (0.6831, entry 66) and once on the test days by owner decision: 0.5666 on H and 0.5691 on Q (entry 67). The lower test values come from a naive forecast that was much worse in the autumn. All rows are in `backtest_core.csv` and `daily_core.csv`. LightGBM is not started (§9) |
+| Status on 25 Nov 2026 | The statistical baseline is done for all 7 zones. `statsforecast` 2.1.1 is pinned. AutoARIMA, AutoETS and MSTL run through the same backtest from `src/epf/models/stats.py`, on the price history only. 15 settings were compared on the validation days of experiment H, and by a rule fixed before the runs the winner is `mstl_182`: MSTL with a daily and a weekly season on 182 days of history (DECISIONS entries 62 to 65). Its mean relative MAE over the seven zones is 0.6887 on validation. The three best settings are a tie inside the noise. `mstl_182` was also scored on experiment Q validation (0.6831, entry 66) and once on the test days by owner decision: 0.5666 on H and 0.5691 on Q (entry 67). The lower test values come from a naive forecast that was much worse in the autumn. All rows are in `backtest_core.csv` and `daily_core.csv`. On 26 Nov 2026 I confirmed that `mstl_182` stays the baseline, and every measurement of the comparison, with the run times, was collected in `docs/MODEL_NOTES.md` (entry 68). LightGBM is not started (§9) |
 | Next deadline | M2 Technical Checkpoint, assumed Thu 3 Dec 2026 (confirm, §11) |
 | Grading | M1 25% · M2 25% · M3 50%. A viva can be called at any milestone |
 | AI tools | Allowed. I must understand, justify and explain every decision and result |
@@ -186,7 +186,7 @@ Log the Sweden addition as the first entry in `docs/DECISIONS.md`: decision, rea
 | # | Model | Library | Notes | Stage |
 |---|---|---|---|---|
 | 1 | Seasonal naive, same local MTU on D-7 | Own code | Reference for relative MAE | M2 must |
-| 2 | SARIMA or ETS | `statsforecast` | Fit on a trailing window. If SARIMA is too slow at 15-min, use ETS or MSTL. M1 wording allows either | M2 must |
+| 2 | SARIMA or ETS | `statsforecast` | Fit on a trailing window. If SARIMA is too slow at 15-min, use ETS or MSTL. M1 wording allows either. Done on 25 Nov 2026: ARIMA, ETS and MSTL were compared, and the baseline is MSTL on 182 days, `mstl_182` (DECISIONS entry 64, `docs/MODEL_NOTES.md`) | M2 must |
 | 3 | LightGBM | `lightgbm` | Lagged prices, calendar, day-ahead load/wind/solar forecasts. Weather later. Quantile regression for intervals | M2 must (point), should (quantiles) |
 | 4 | Chronos-2 zero-shot | `chronos-forecasting`, `amazon/chronos-2` | Univariate first | M2 should |
 | 5 | TimesFM 2.5 zero-shot | `timesfm[torch]`, `google/timesfm-2.5-200m-pytorch` | Set `infer_is_positive=False` because prices go negative | M2 should |
@@ -233,7 +233,7 @@ All seven zones run every model. Hyperparameters, history length and context len
 ├── scripts/                  # check_coverage.py (day-1 gate)
 ├── notebooks/                # EDA only
 ├── reports/figures/  reports/results/
-├── docs/                     # PROJECT_CONTEXT.md, DECISIONS.md, DATA_NOTES.md, PROGRESS.md, architecture.md
+├── docs/                     # PROJECT_CONTEXT.md, DECISIONS.md, DATA_NOTES.md, MODEL_NOTES.md, PROGRESS.md, architecture.md
 └── tests/
 ```
 
@@ -245,6 +245,7 @@ All seven zones run every model. Hyperparameters, history length and context len
 - Commits: a plain subject without type prefixes, under 72 characters, starting with a verb. A short body only when the reason is not obvious. Written the way I would write it by hand (CLAUDE.md, Commits).
 - `docs/PROGRESS.md`: one row per day with date, done, next, blockers.
 - `docs/DECISIONS.md`: numbered entries with decision, reason, alternative rejected, date.
+- `docs/MODEL_NOTES.md`: the measured results of each model, one section per model: how it was measured, the settings tried, the result tables, the run times and the checks. It holds numbers, and DECISIONS holds the reasons (entry 68). Add a section when a model has run.
 
 ## 9. Plan to M2 (assumes submission Thu 3 Dec 2026)
 
