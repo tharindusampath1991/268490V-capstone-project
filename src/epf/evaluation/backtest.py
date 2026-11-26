@@ -16,8 +16,10 @@ entry without it uses backtest.history_days.
 For every delivery day the loop cuts the table with day_inputs (see
 epf.evaluation.cutoff), hands the result to the model and takes back one
 forecast per market time unit. A zone with a weather point also has its
-weather table cut and handed over. The actual prices of the day stay here
-and are set beside the forecast only after the model has answered.
+weather table cut and handed over. The holiday dates of the country of the
+zone are handed over too, so a model need not know its zone. The actual
+prices of the day stay here and are set beside the forecast only after the
+model has answered.
 
 A model has a name, its settings as params, and two methods:
     fit(inputs)      called on the first scored day and then every
@@ -36,7 +38,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Protocol
 
 import numpy as np
@@ -58,6 +60,7 @@ from epf.evaluation.cutoff import (
     weather_rule,
 )
 from epf.evaluation.metrics import daily_losses, mae, relative_mae, rmse
+from epf.features.holiday_calendar import holiday_dates
 from epf.models.naive import SeasonalNaive
 from epf.models.stats import StatsModel
 from epf.seed import set_seed
@@ -110,7 +113,8 @@ class ZoneResult:
 def run_days(table: pd.DataFrame, days: list[Day], make_index: MakeIndex, model: Model,
              columns: Columns, refit_every_days: int,
              history_days: int | None = None, weather: pd.DataFrame | None = None,
-             rule: WeatherRule | None = None) -> tuple[pd.DataFrame, float]:
+             rule: WeatherRule | None = None,
+             holidays: frozenset[date] = frozenset()) -> tuple[pd.DataFrame, float]:
     """Forecast every delivery day of a list and set the actual prices beside the forecasts.
 
     Input: a table with a UTC index, the delivery days as (day start, next
@@ -118,7 +122,9 @@ def run_days(table: pd.DataFrame, days: list[Day], make_index: MakeIndex, model:
         units of a day (hourly_index or quarter_hour_index), the model, the
         columns under each cut, the number of days between two fits, and the
         days of history a model receives (None for all). Optionally the
-        weather table with a UTC index, and its rule.
+        weather table with a UTC index, and its rule. Optionally the holiday
+        dates, as calendar dates in market time. The model receives all of
+        them on every day.
     Output: a frame with a UTC index and the columns forecast and actual,
         one row per market time unit of the days, then the seconds the loop
         took. The time covers the cuts, fit and predict.
@@ -130,7 +136,7 @@ def run_days(table: pd.DataFrame, days: list[Day], make_index: MakeIndex, model:
     started = time.perf_counter()
     for number, (day_start, day_end) in enumerate(days):
         inputs = day_inputs(table, day_start, day_end, make_index(day_start, day_end), columns,
-                            history_days, weather, rule)
+                            history_days, weather, rule, holidays)
         if number % refit_every_days == 0:
             model.fit(inputs)
         forecasts.append(checked_forecast(model.predict(inputs), inputs.target_index))
@@ -217,6 +223,19 @@ def read_weather(config: dict, zone: Zone, end: pd.Timestamp) -> pd.DataFrame | 
     if zone.weather_point is None:
         return None
     return read_table(config, WEATHER_TABLE, zone.key, end)
+
+
+def zone_holidays(zone: Zone, first: pd.Timestamp, end: pd.Timestamp) -> frozenset[date]:
+    """Return the holiday dates of the country of a zone for the years from first to end.
+
+    Input: the zone, the first moment of its table and the end of the scored
+        split, both in market time.
+    Output: the dates of the holiday categories of the zone, for every whole
+        year from the year of first to the year of end. They are calendar
+        dates in market time.
+    """
+    return frozenset(holiday_dates(zone.holiday_country, zone.holiday_categories,
+                                   range(first.year, end.year + 1)))
 
 
 def lag_check_days(days: list[Day], lag_days: int) -> list[Day]:
@@ -321,7 +340,8 @@ def backtest_zone(config: dict, zone: Zone, experiment: str, split: str, model: 
         empty or infinite, the row and the daily losses are empty and only the
         checks say why. The model receives the history length of its own
         entry. The naive reference always receives backtest.history_days.
-        Both receive the weather of a zone that has a weather point.
+        Both receive the weather of a zone that has a weather point, and
+        the holiday dates of the country of the zone.
     """
     table_name, make_index = EXPERIMENTS[experiment]
     market_tz = config["market"]["timezone"]
@@ -333,12 +353,13 @@ def backtest_zone(config: dict, zone: Zone, experiment: str, split: str, model: 
     table = read_table(config, table_name, zone.key, end)
     weather = read_weather(config, zone, end)
     rule = None if weather is None else weather_rule(config)
+    holidays = zone_holidays(zone, table.index[0].tz_convert(market_tz), end)
 
     scored, seconds = run_days(table, days, make_index, model, columns, refit,
-                               model_history(config, model.name), weather, rule)
+                               model_history(config, model.name), weather, rule, holidays)
     peak = results.peak_memory_mb()
     reference, _ = run_days(table, days, make_index, SeasonalNaive(lag_days), columns, refit,
-                            config["backtest"]["history_days"], weather, rule)
+                            config["backtest"]["history_days"], weather, rule, holidays)
 
     checks = count_checks(scored, reference, make_index(start, end),
                           config["splits"][f"{split}_days"], market_tz)

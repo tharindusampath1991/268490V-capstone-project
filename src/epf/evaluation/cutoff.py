@@ -12,6 +12,9 @@ Each moment is 00:00 of a calendar day in market time. The weather forecast
 is its own table with a fourth cut: through the end of D, and only from a
 model run that started at or before the run hour on D-1 in UTC.
 
+The holiday dates are under no cut. A calendar is known years ahead, so the
+dates after D are handed over too. They are calendar dates in market time.
+
 A model receives a DayInputs object and nothing else. The rows after a cut
 are not in it. Tables have a UTC index.
 """
@@ -55,6 +58,8 @@ class DayInputs:
     # Hourly, before 00:00 market time on D+1, from runs up to the run hour on D-1.
     # Without columns when no weather table was given.
     weather: pd.DataFrame = field(default_factory=pd.DataFrame)
+    # Calendar dates in market time, not cut. Empty when no holiday dates were given.
+    holidays: frozenset[date] = frozenset()
 
 
 def cut_columns(config: dict) -> Columns:
@@ -93,15 +98,18 @@ def check_columns(table: pd.DataFrame, columns: Columns) -> None:
 def day_inputs(table: pd.DataFrame, day_start: pd.Timestamp, day_end: pd.Timestamp,
                target_index: pd.DatetimeIndex, columns: Columns,
                history_days: int | None = None, weather: pd.DataFrame | None = None,
-               rule: WeatherRule | None = None) -> DayInputs:
+               rule: WeatherRule | None = None,
+               holidays: frozenset[date] = frozenset()) -> DayInputs:
     """Cut a table to what is known when delivery day D is forecast.
 
     Input: a table with a UTC index, 00:00 in market time on D and on D+1,
         the market time units of D in UTC, the columns under each cut, and
         the number of days of history to keep. None keeps every row from the
         first one. Optionally the weather table with a UTC index, and its rule.
-    Output: the inputs of the day. Each part is a copy, so writing into it
-        does not change the table.
+        Optionally the holiday dates, as calendar dates in market time.
+    Output: the inputs of the day. Each table part is a copy, so writing into
+        it does not change the table. The holiday dates are handed over as
+        they are: no cut and no history length applies to them.
     Raises ValueError when an index is not UTC, sorted and free of repeats,
         when check_columns or check_weather refuses a table.
     """
@@ -124,6 +132,7 @@ def day_inputs(table: pd.DataFrame, day_start: pd.Timestamp, day_end: pd.Timesta
         delayed=table.loc[table.index < previous_day_start, _present(table, columns.delayed)],
         market_tz=str(day_start.tz),
         weather=known_weather,
+        holidays=holidays,
     )
 
 

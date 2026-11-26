@@ -30,10 +30,9 @@ import pandas as pd
 from epf.config import REPO_ROOT, Zone, load_config, ordered_zones
 from epf.data.market_time import delivery_days
 from epf.data.splits import TEST, split_range
-from epf.evaluation.backtest import EXPERIMENTS, read_table, read_weather
+from epf.evaluation.backtest import EXPERIMENTS, read_table, read_weather, zone_holidays
 from epf.evaluation.cutoff import cut_columns, weather_rule
 from epf.features.builder import build_features, feature_settings
-from epf.features.holiday_calendar import holiday_dates
 
 
 def features_path(folder: Path, experiment: str, zone_key: str) -> Path:
@@ -57,8 +56,7 @@ def zone_features(config: dict, zone: Zone, experiment: str) -> pd.DataFrame:
     weather = read_weather(config, zone, end)
     rule = None if weather is None else weather_rule(config)
     start = table.index[0].tz_convert(config["market"]["timezone"])
-    holidays = holiday_dates(zone.holiday_country, zone.holiday_categories,
-                             range(start.year, end.year + 1))
+    holidays = zone_holidays(zone, start, end)
     features = build_features(table, delivery_days(start, end), make_index, cut_columns(config),
                               feature_settings(config), holidays, weather, rule)
     if not features.index.equals(table.index):

@@ -279,3 +279,34 @@ def test_weather_rule_reads_the_columns_and_the_run_hour_from_the_config():
               "backtest": {"weather_run_column": "run"}}
 
     assert weather_rule(config) == WEATHER
+
+
+# One date lies before the first row of the table, one is the delivery day, one is months later.
+HOLIDAYS = frozenset({date(2026, 6, 1), date(2026, 7, 1), date(2026, 12, 25)})
+
+
+def holiday_inputs_for(holidays: frozenset[date], day: str, history_days=None):
+    """The inputs of one delivery day with holiday dates."""
+    table = make_table(str(day_after(day, -12)), str(day_after(day, 3)))
+    day_start, day_end = market_time(day), market_time(day_after(day))
+    return day_inputs(table, day_start, day_end, hourly_index(day_start, day_end), COLUMNS,
+                      history_days, holidays=holidays)
+
+
+def test_inputs_hold_the_holiday_dates_they_were_given():
+    inputs = holiday_inputs_for(HOLIDAYS, "2026-07-01")
+
+    assert inputs.holidays == HOLIDAYS
+
+
+def test_holiday_dates_are_cut_neither_by_the_delivery_day_nor_by_the_history():
+    inputs = holiday_inputs_for(HOLIDAYS, "2026-07-01", history_days=3)
+
+    assert inputs.prices.index.min() == market_time("2026-06-28")
+    assert inputs.holidays == HOLIDAYS
+
+
+def test_inputs_without_holiday_dates_hold_an_empty_set():
+    inputs = inputs_for(make_table("2026-06-20", "2026-07-05"), "2026-07-01")
+
+    assert inputs.holidays == frozenset()

@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from epf.config import ordered_zones
+from epf.config import Zone, ordered_zones
 from epf.data.market_time import delivery_days, hourly_index, quarter_hour_index
 from epf.data.splits import split_range
 from epf.data.validate import HOURLY, QUARTER_HOUR, WEATHER_TABLE, table_path
@@ -23,6 +23,7 @@ from epf.evaluation.backtest import (
     read_weather,
     run,
     run_days,
+    zone_holidays,
 )
 from epf.evaluation.cutoff import Columns, DayInputs, WeatherRule
 from epf.models.naive import SeasonalNaive
@@ -268,8 +269,8 @@ def project_config(tmp_path, data_start: str = "2026-10-05") -> dict:
                      "price_column": "price", "day_ahead_columns": ["load_forecast"],
                      "delayed_columns": ["actual_load"]},
         "models": {"naive": {"lag_days": 7}},
-        "zones": [{"key": "B", "holiday_country": "XX", "group": "extra"},
-                  {"key": "A", "holiday_country": "XX", "group": "core"}],
+        "zones": [{"key": "B", "holiday_country": "SE", "group": "extra"},
+                  {"key": "A", "holiday_country": "DE", "group": "core"}],
     }
 
 
@@ -701,3 +702,94 @@ def test_the_command_scores_a_zone_with_weather_as_before(tmp_path):
     core = saved(config, "backtest_core.csv")
     assert core["mae"].tolist() == [7.0, 7.0]
     assert core["mtus"].tolist() == [120, 480]
+
+
+# The holiday dates. In the small project zone A has the German calendar and zone B the Swedish
+# one. 3 October is a public holiday in Germany only and 6 June in Sweden only.
+
+HOLIDAYS = frozenset({date(2026, 6, 1), date(2026, 10, 25), date(2026, 12, 25)})
+GERMAN_ONLY, SWEDISH_ONLY = date(2026, 10, 3), date(2026, 6, 6)
+
+
+def test_a_model_receives_the_holiday_dates_of_the_run_on_every_day():
+    table = make_table("2026-10-10", "2026-11-05")
+    model = Recorder()
+
+    run_days(table, days_from("2026-10-20", 14), hourly_index, model, COLUMNS, refit_every_days=7,
+             holidays=HOLIDAYS)
+
+    assert len(model.fits) == 2
+    assert len(model.predicts) == 14
+    for inputs in model.fits + model.predicts:
+        assert inputs.holidays == HOLIDAYS
+
+
+def test_a_model_receives_no_holiday_dates_when_the_run_has_none():
+    model = Recorder()
+
+    run_days(make_table("2026-06-20", "2026-07-05"), days_from("2026-07-01", 1), hourly_index,
+             model, COLUMNS, refit_every_days=7)
+
+    assert model.predicts[0].holidays == frozenset()
+
+
+def test_zone_holidays_cover_the_years_from_the_first_to_the_last_moment():
+    zone = Zone(key="A", holiday_country="DE", group="core")
+
+    holidays = zone_holidays(zone, market_time("2024-12-20"), market_time("2026-10-25"))
+
+    assert isinstance(holidays, frozenset)
+    assert {day.year for day in holidays} == {2024, 2025, 2026}
+    assert {date(2024, 1, 1), date(2025, 10, 3), date(2026, 12, 25)} <= holidays
+
+
+def test_zone_holidays_are_those_of_the_country_and_the_categories_of_the_zone():
+    # 24 December is no public holiday in Sweden. The de_facto category holds it.
+    german = Zone(key="A", holiday_country="DE", group="core")
+    swedish = Zone(key="B", holiday_country="SE", group="core")
+    swedish_de_facto = Zone(key="C", holiday_country="SE", group="core",
+                            holiday_categories=["public", "de_facto"])
+    first, end = market_time("2026-10-05"), market_time("2026-10-25")
+
+    assert GERMAN_ONLY in zone_holidays(german, first, end)
+    assert SWEDISH_ONLY not in zone_holidays(german, first, end)
+    assert SWEDISH_ONLY in zone_holidays(swedish, first, end)
+    assert date(2026, 12, 24) not in zone_holidays(swedish, first, end)
+    assert date(2026, 12, 24) in zone_holidays(swedish_de_facto, first, end)
+
+
+def recorded_zone(config: dict, zone_key: str, model: Recorder) -> None:
+    """Run the hourly validation days of one zone of the small project with a recording model."""
+    zone = [zone for zone in ordered_zones(config) if zone.key == zone_key][0]
+    model.name = "naive"   # the history length is read from the config entry of this name
+    backtest_zone(config, zone, "H", "validation", model,
+                  run_info={"model": "recorder", "split": "validation"})
+
+
+def test_the_backtest_of_a_zone_hands_the_holidays_of_its_country_to_the_model(tmp_path):
+    config = project_config(tmp_path)
+    save_tables(config)
+    model = Recorder()
+
+    recorded_zone(config, "A", model)
+
+    assert len(model.predicts) == 5
+    for inputs in model.fits + model.predicts:
+        assert GERMAN_ONLY in inputs.holidays
+        assert SWEDISH_ONLY not in inputs.holidays
+        assert {day.year for day in inputs.holidays} == {2026}
+
+
+def test_one_model_receives_the_holidays_of_each_zone_it_is_run_on(tmp_path):
+    config = project_config(tmp_path)
+    save_tables(config)
+    model = Recorder()
+
+    recorded_zone(config, "A", model)
+    recorded_zone(config, "B", model)
+
+    assert len(model.predicts) == 10
+    for inputs in model.predicts[:5]:
+        assert GERMAN_ONLY in inputs.holidays and SWEDISH_ONLY not in inputs.holidays
+    for inputs in model.predicts[5:]:
+        assert SWEDISH_ONLY in inputs.holidays and GERMAN_ONLY not in inputs.holidays
