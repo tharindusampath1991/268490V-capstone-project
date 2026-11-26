@@ -162,7 +162,8 @@ models:
   # Candidates for the LightGBM model, compared on the validation days of all seven zones
   # on experiment H.
   #   groups        the feature groups the model uses, from features.groups above
-  #   objective     the error the trees are grown on. regression is the squared error.
+  #   objective     the error the trees are grown on. regression is the squared error,
+  #                 regression_l1 the absolute error.
   #   trees         number of boosting rounds, one tree per round
   #   params        LightGBM parameters. {} leaves the defaults of LightGBM, a learning rate
   #                 of 0.1 and 31 leaves per tree.
@@ -170,6 +171,8 @@ models:
   #                 window. Without it the model receives every day before the delivery day.
   # The weather table starts on 2024-03-15. 826 days are 118 weeks, so at the first fit the
   # window of the two entries on 826 days lies inside the weather period.
+  # The last three entries are lgbm_load_826 with one change each. A quarter of the learning
+  # rate with four times the trees counts as one change.
   lgbm_price: {family: lgbm, objective: regression, trees: 100, params: {},
                groups: [price, calendar]}
   lgbm_fcst: {family: lgbm, objective: regression, trees: 100, params: {},
@@ -186,6 +189,12 @@ models:
                   groups: [price, calendar, load_forecast, wind_forecast, solar_forecast, actual_load]}
   lgbm_all_364: {family: lgbm, objective: regression, trees: 100, params: {}, history_days: 364,
                  groups: [price, calendar, load_forecast, wind_forecast, solar_forecast, actual_load, weather]}
+  lgbm_load_826_l1: {family: lgbm, objective: regression_l1, trees: 100, params: {}, history_days: 826,
+                     groups: [price, calendar, load_forecast, wind_forecast, solar_forecast, actual_load]}
+  lgbm_load_826_slow: {family: lgbm, objective: regression, trees: 400, params: {learning_rate: 0.025}, history_days: 826,
+                       groups: [price, calendar, load_forecast, wind_forecast, solar_forecast, actual_load]}
+  lgbm_load_826_leaves15: {family: lgbm, objective: regression, trees: 100, params: {num_leaves: 15}, history_days: 826,
+                           groups: [price, calendar, load_forecast, wind_forecast, solar_forecast, actual_load]}
 
 # EDA 1 (docs/DECISIONS.md, entry 38). An hour is a spike when its price is above the mean
 # plus spike_sd standard deviations of the spike_window_days days before it. Both numbers

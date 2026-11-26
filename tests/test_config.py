@@ -164,27 +164,37 @@ PRICE_GROUPS = ["price", "calendar"]
 FORECAST_GROUPS = [*PRICE_GROUPS, "load_forecast", "wind_forecast", "solar_forecast"]
 LOAD_GROUPS = [*FORECAST_GROUPS, "actual_load"]
 ALL_GROUPS = [*LOAD_GROUPS, "weather"]
-# The approved LightGBM candidates: the feature groups and the days of history of each.
-# None stands for an entry without history_days, which receives every day.
-LGBM_CANDIDATES = {
-    "lgbm_price": (PRICE_GROUPS, None),
-    "lgbm_fcst": (FORECAST_GROUPS, None),
-    "lgbm_load": (LOAD_GROUPS, None),
-    "lgbm_all": (ALL_GROUPS, None),
-    "lgbm_load_826": (LOAD_GROUPS, 826),
-    "lgbm_all_826": (ALL_GROUPS, 826),
-    "lgbm_load_364": (LOAD_GROUPS, 364),
-    "lgbm_all_364": (ALL_GROUPS, 364),
-}
 
 
-def lgbm_entry(groups: list[str], history_days: int | None) -> dict:
-    """One approved LightGBM entry as config/config.yaml holds it."""
-    entry = {"family": "lgbm", "groups": groups, "objective": "regression", "trees": 100,
-             "params": {}}
+def lgbm_entry(groups: list[str], history_days: int | None = None, objective: str = "regression",
+               trees: int = 100, params: dict | None = None) -> dict:
+    """One approved LightGBM entry as config/config.yaml holds it.
+
+    Without history_days the entry has no such key and the model receives
+    every day. Without params the entry holds an empty dictionary.
+    """
+    entry = {"family": "lgbm", "groups": groups, "objective": objective, "trees": trees,
+             "params": params or {}}
     if history_days is not None:
         entry["history_days"] = history_days
     return entry
+
+
+# The approved LightGBM candidates. The last three are lgbm_load_826 with one change each.
+LGBM_CANDIDATES = {
+    "lgbm_price": lgbm_entry(PRICE_GROUPS),
+    "lgbm_fcst": lgbm_entry(FORECAST_GROUPS),
+    "lgbm_load": lgbm_entry(LOAD_GROUPS),
+    "lgbm_all": lgbm_entry(ALL_GROUPS),
+    "lgbm_load_826": lgbm_entry(LOAD_GROUPS, 826),
+    "lgbm_all_826": lgbm_entry(ALL_GROUPS, 826),
+    "lgbm_load_364": lgbm_entry(LOAD_GROUPS, 364),
+    "lgbm_all_364": lgbm_entry(ALL_GROUPS, 364),
+    "lgbm_load_826_l1": lgbm_entry(LOAD_GROUPS, 826, objective="regression_l1"),
+    "lgbm_load_826_slow": lgbm_entry(LOAD_GROUPS, 826, trees=400,
+                                     params={"learning_rate": 0.025}),
+    "lgbm_load_826_leaves15": lgbm_entry(LOAD_GROUPS, 826, params={"num_leaves": 15}),
+}
 
 
 def test_project_config_holds_the_approved_lightgbm_candidates():
@@ -192,8 +202,7 @@ def test_project_config_holds_the_approved_lightgbm_candidates():
 
     found = {name: entry for name, entry in models.items() if entry.get("family") == "lgbm"}
 
-    assert found == {name: lgbm_entry(groups, history_days)
-                     for name, (groups, history_days) in LGBM_CANDIDATES.items()}
+    assert found == LGBM_CANDIDATES
 
 
 def test_project_config_names_a_frozen_statistical_baseline_that_is_a_model_entry():
