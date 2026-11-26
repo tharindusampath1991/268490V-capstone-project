@@ -4,8 +4,8 @@ entsoe-py==1.0.0
 holidays==0.109
 # Not imported by the code. nbconvert needs it as the kernel that runs the EDA notebooks.
 ipykernel==7.4.0
-# Used through its native API only (lightgbm.train and Dataset), which runs without
-# scikit-learn. scikit-learn is not installed.
+# Used through its native API only (lightgbm.train and Dataset). The native API runs
+# without scikit-learn.
 lightgbm==4.7.0
 matplotlib==3.11.2
 # Not imported by the code. Runs the EDA notebooks from the command line.

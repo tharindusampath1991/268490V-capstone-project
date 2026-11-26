@@ -108,8 +108,9 @@ def day_inputs(table: pd.DataFrame, day_start: pd.Timestamp, day_end: pd.Timesta
         first one. Optionally the weather table with a UTC index, and its rule.
         Optionally the holiday dates, as calendar dates in market time.
     Output: the inputs of the day. Each table part is a copy, so writing into
-        it does not change the table. The holiday dates are handed over as
-        they are: no cut and no history length applies to them.
+        it does not change the table. No cut and no history length applies
+        to the holiday dates. They are stored as a frozenset, so a set that
+        the caller changes later does not change the inputs.
     Raises ValueError when an index is not UTC, sorted and free of repeats,
         when check_columns or check_weather refuses a table.
     """
@@ -132,7 +133,7 @@ def day_inputs(table: pd.DataFrame, day_start: pd.Timestamp, day_end: pd.Timesta
         delayed=table.loc[table.index < previous_day_start, _present(table, columns.delayed)],
         market_tz=str(day_start.tz),
         weather=known_weather,
-        holidays=holidays,
+        holidays=frozenset(holidays),
     )
 
 

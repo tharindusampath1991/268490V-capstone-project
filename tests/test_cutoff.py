@@ -285,7 +285,7 @@ def test_weather_rule_reads_the_columns_and_the_run_hour_from_the_config():
 HOLIDAYS = frozenset({date(2026, 6, 1), date(2026, 7, 1), date(2026, 12, 25)})
 
 
-def holiday_inputs_for(holidays: frozenset[date], day: str, history_days=None):
+def holiday_inputs_for(holidays: frozenset[date] | set[date], day: str, history_days=None):
     """The inputs of one delivery day with holiday dates."""
     table = make_table(str(day_after(day, -12)), str(day_after(day, 3)))
     day_start, day_end = market_time(day), market_time(day_after(day))
@@ -310,3 +310,19 @@ def test_inputs_without_holiday_dates_hold_an_empty_set():
     inputs = inputs_for(make_table("2026-06-20", "2026-07-05"), "2026-07-01")
 
     assert inputs.holidays == frozenset()
+
+
+def test_a_plain_set_of_holiday_dates_comes_back_as_a_frozenset_with_the_same_dates():
+    inputs = holiday_inputs_for(set(HOLIDAYS), "2026-07-01")
+
+    assert isinstance(inputs.holidays, frozenset)
+    assert inputs.holidays == HOLIDAYS
+
+
+def test_changing_the_set_of_the_caller_afterwards_does_not_change_the_inputs():
+    of_the_caller = set(HOLIDAYS)
+    inputs = holiday_inputs_for(of_the_caller, "2026-07-01")
+
+    of_the_caller.add(date(2027, 1, 1))
+
+    assert inputs.holidays == HOLIDAYS

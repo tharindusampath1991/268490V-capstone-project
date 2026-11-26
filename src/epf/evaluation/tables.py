@@ -18,7 +18,8 @@ a line under the table names the models for which that happened.
 A model without a row for a zone has an empty cell there. Its mean is left
 empty too, and is not computed over fewer zones, because a mean over other
 zones cannot be compared with the mean of the other models. Such a model
-stands below the models with a mean.
+stands below the models with a mean. A row whose stored relative_mae is
+empty prints like a missing row: an empty cell and an empty mean.
 
 The command writes no file.
 """

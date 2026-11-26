@@ -228,8 +228,10 @@ def read_weather(config: dict, zone: Zone, end: pd.Timestamp) -> pd.DataFrame | 
 def zone_holidays(zone: Zone, first: pd.Timestamp, end: pd.Timestamp) -> frozenset[date]:
     """Return the holiday dates of the country of a zone for the years from first to end.
 
-    Input: the zone, the first moment of its table and the end of the scored
-        split, both in market time.
+    Input: the zone, the first moment of its table and the end of the period
+        the caller covers, both in market time. The backtest hands over the
+        end of the scored split, the feature build the end of the days it
+        builds.
     Output: the dates of the holiday categories of the zone, for every whole
         year from the year of first to the year of end. They are calendar
         dates in market time.
@@ -356,10 +358,10 @@ def backtest_zone(config: dict, zone: Zone, experiment: str, split: str, model: 
     holidays = zone_holidays(zone, table.index[0].tz_convert(market_tz), end)
 
     scored, seconds = run_days(table, days, make_index, model, columns, refit,
-                               model_history(config, model.name), weather, rule, holidays)
+                               model_history(config, model.name), weather, rule, holidays=holidays)
     peak = results.peak_memory_mb()
     reference, _ = run_days(table, days, make_index, SeasonalNaive(lag_days), columns, refit,
-                            config["backtest"]["history_days"], weather, rule, holidays)
+                            config["backtest"]["history_days"], weather, rule, holidays=holidays)
 
     checks = count_checks(scored, reference, make_index(start, end),
                           config["splits"][f"{split}_days"], market_tz)
