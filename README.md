@@ -148,7 +148,6 @@ Once the tables are built, this scores the seasonal naive forecast on the 60 val
 - The seasonal naive forecast is the price at the same local time 7 days before (DECISIONS entry 52). It is the reference for relative MAE.
 - The command prints its checks per zone and experiment and stops with an error when one fails.
 - Results go to `reports/results/`, which is committed. `backtest_core.csv` holds one row per run, zone and experiment for all seven zones. Each row has the metrics, the model settings, the seed, the run time, the peak memory and the hardware. `daily_core.csv` holds the losses per delivery day.
-- SE1 to SE4 are in the same files as DE-LU, FR and ES.
 - A run adds rows to `backtest_core.csv`, so a second run shows as a second set of rows.
 - Forecasts per market time unit are saved under `data/forecasts/`, which git ignores.
 - `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config: the naive forecast and `mstl_182`, the statistical baseline (DECISIONS entries 50, 58 and 67). Each of the two test runs was done once, on 24 and on 25 Nov 2026.

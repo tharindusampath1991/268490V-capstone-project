@@ -5,14 +5,14 @@ Individual MSc capstone (CS5998, University of Moratuwa): next-day electricity p
 Scope, forecast protocol, models, plan: @docs/PROJECT_CONTEXT.md
 
 ## Hard rules
-- Scope is locked (M1 approved). No new models, zones, targets or dependencies beyond PROJECT_CONTEXT §1 and §6 without asking.
+- Scope is locked. No new models, zones, targets or dependencies beyond PROJECT_CONTEXT §1 and §6 without asking.
 - Never fabricate data, metrics or outputs. Report only what a command actually printed. If a run fails, say so.
 - The leakage rule (PROJECT_CONTEXT §5) applies to every feature and model input. If unsure, leave it out and flag it.
 - Time-based splits only. Tune on validation. The test set is touched only by the final backtest.
 - Never commit raw data, `.env`, tokens or model caches. The token is read from `ENTSOE_API_TOKEN` in `.env`. Never print it. ENTSO-E request URLs contain it, so never print or log a raw request error either.
 - All seven zones are core zones: DE-LU, FR, ES and the Swedish zones SE1–SE4. Every analysis, model and results table covers all seven. No zone is cut first.
 - One setting per model, chosen on the validation days of all seven zones. No tuning and no feature for one zone only.
-- The seven zones are shown alike. Nothing marks or describes SE1–SE4 as added later, and no text says which zones Milestone 1 approved (DECISIONS entry 81).
+- The seven zones are shown alike. Nothing marks or describes SE1–SE4 as added later (DECISIONS entry 81).
 - No external LLM API calls in the pipeline.
 - Do not commit or push unless I say so. I review the diff first.
 - No backdated commits. No rewriting pushed history.

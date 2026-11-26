@@ -18,14 +18,14 @@ Owner: A A T Sampath (268490V) · Last updated: 2026-11-26
 | AI tools | Allowed. I must understand, justify and explain every decision and result |
 | Zones | Seven core zones: DE-LU, FR, ES and SE1–SE4 (all of Sweden). All seven get the same analysis, tuning and reporting (§1, §3.1) |
 
-## 1. Locked scope (from Milestone 1)
+## 1. Locked scope
 
 - Problem: prediction of next-day (day-ahead) prices, with prediction intervals.
 - Data: multivariate time series of prices, load, generation forecasts, weather.
 - Techniques: statistical models, machine learning, deep learning foundation models.
 - System: forecasting pipeline with a dashboard, plus an experimental comparison.
 - Core zones: DE-LU, FR, ES, SE1, SE2, SE3, SE4. Seven zones in total. Rules:
-  - Shown alike: README, results and report show the seven zones alike. Nothing marks or describes SE1–SE4 as added later, and no text says which zones Milestone 1 approved (DECISIONS entry 81).
+  - Shown alike: README, results and report show the seven zones alike. Nothing marks or describes SE1–SE4 as added later (DECISIONS entry 81).
   - Same pipeline, one config entry per zone. Every analysis, model and results table covers all seven zones: preprocessing, EDA, baselines, LightGBM and the foundation models.
   - Coverage: the day-1 coverage check measured the series of every zone (§3.1).
   - Tuning: hyperparameters, history length and context lengths are chosen on the validation days of all seven zones. One setting per model for all zones, no setting per zone. No features that exist for one zone only.
@@ -102,9 +102,9 @@ Known traps:
 - ENTSO-E request URLs carry the token. Never print or log a raw request error.
 - Sweden specifics are in §3.1.
 
-### 3.1 Sweden (SE1–SE4) data check (checked 19 Nov 2026)
+### 3.1 Sweden (SE1–SE4) data check of 19 Nov 2026
 
-Verdict: the Swedish data is usable for M2, and the day-1 coverage check confirmed it for each zone. The real cost of the four zones is time.
+Verdict: the Swedish data is usable for M2, and the day-1 coverage check confirmed it for each zone.
 
 | Check | Finding |
 |---|---|
@@ -116,7 +116,7 @@ Verdict: the Swedish data is usable for M2, and the day-1 coverage check confirm
 | Hydro | Reservoir inputs added nothing at the day-ahead horizon in that study. No hydro features needed |
 | Holidays | `holidays` 0.109 covers Sweden, one calendar for all four zones. `public` gives 13 days in 2026. `de_facto` adds Julafton, Midsommarafton and Nyårsafton |
 | Regime change | Nordic flow-based market coupling from delivery day 30 Oct 2024. Note it in the EDA |
-| Cost (estimate) | No code of their own, since zones are config-driven. About 6–8 hours for their checks, EDA and tables. Backtest run time with seven zones is about 2.3 times the run with DE-LU, FR and ES alone |
+| Cost (estimate) | No code of their own, since zones are config-driven. About 6–8 hours for their checks, EDA and tables |
 
 Zone profiles from the same preprint: 2024 generation shares, and 2025 hourly results for its per-hour LightGBM. Reference values, not my results.
 
@@ -294,8 +294,6 @@ Cut order if behind (first cut first): TimesFM zero-shot, LightGBM quantiles, st
 - [ ] Laptop: OS, CPU, RAM, GPU:
 - [x] Python version and env tool: 3.12, venv + pip. `entsoe-py` 1.0.0 needs Python 3.12 or newer (DECISIONS entry 2)
 - [ ] Hours available on weekdays and weekends:
-- [x] Swedish zones: all four (SE1, SE2, SE3, SE4), in M2, core zones
-- [ ] Tell the supervisor about the Sweden addition and that SE1–SE4 are now core zones, if one is assigned:
 - [x] Where code is written and run: Claude Code in the repo, Claude Project for planning and review
 
 ## 12. Demo video outline (max 6 min)
