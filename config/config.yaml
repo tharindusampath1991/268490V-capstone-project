@@ -97,6 +97,10 @@ backtest:
     - solar_forecast
   delayed_columns:                # known through the end of D-2
     - actual_load
+  # The weather table has its own cut (docs/DECISIONS.md, entry 78). Its columns are
+  # open_meteo.variables. A value is known for D when it stands before the end of D and its
+  # model run started at or before open_meteo.run_hour_utc on D-1. This column holds the run.
+  weather_run_column: run
 
 # Model settings, copied into every results row. --model of the backtest takes a name from here.
 models:
