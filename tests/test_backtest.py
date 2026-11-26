@@ -10,18 +10,21 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from epf.config import ordered_zones
 from epf.data.market_time import delivery_days, hourly_index, quarter_hour_index
 from epf.data.splits import split_range
-from epf.data.validate import HOURLY, QUARTER_HOUR, table_path
+from epf.data.validate import HOURLY, QUARTER_HOUR, WEATHER_TABLE, table_path
 from epf.evaluation.backtest import (
+    backtest_zone,
     count_checks,
     lag_check_days,
     matches_price_before,
     read_table,
+    read_weather,
     run,
     run_days,
 )
-from epf.evaluation.cutoff import Columns, DayInputs
+from epf.evaluation.cutoff import Columns, DayInputs, WeatherRule
 from epf.models.naive import SeasonalNaive
 
 MARKET_TZ = "Europe/Berlin"
@@ -558,3 +561,143 @@ def test_run_refuses_a_model_entry_without_a_family(tmp_path):
 
     with pytest.raises(SystemExit, match="naive_14.*family"):
         run(config, "naive_14", "validation")
+
+
+# The weather table. The hours of each delivery day come from the 00:00 UTC run of the day before.
+
+WEATHER = WeatherRule(columns=("temperature_2m",), run_column="run", run_hour_utc=0)
+
+
+def make_weather(first_day: str, end_day: str) -> pd.DataFrame:
+    """Hourly weather from first_day up to the start of end_day, every value different."""
+    index = hourly_index(market_time(first_day), market_time(end_day))
+    delivery_day = index.tz_convert(MARKET_TZ).normalize().tz_localize(None)
+    return pd.DataFrame({"temperature_2m": [float(number) for number in range(len(index))],
+                         "run": (delivery_day - timedelta(days=1)).tz_localize("UTC")},
+                        index=index)
+
+
+class UsesWeather:
+    """A model whose forecast is the sum of every weather value it is given."""
+
+    def fit(self, inputs: DayInputs) -> None:
+        pass
+
+    def predict(self, inputs: DayInputs) -> pd.Series:
+        return pd.Series(inputs.weather["temperature_2m"].sum(), index=inputs.target_index)
+
+
+def weather_forecast_of(weather: pd.DataFrame, day: str) -> pd.Series:
+    """The forecast of the weather model for one delivery day through the backtest loop."""
+    table = make_table("2026-06-20", "2026-07-05")
+    scored, _ = run_days(table, days_from(day, 1), hourly_index, UsesWeather(), COLUMNS,
+                         refit_every_days=7, weather=weather, rule=WEATHER)
+    return scored["forecast"]
+
+
+# The days hold 2026-10-25 with 25 hours, as D and as D-1.
+@pytest.mark.parametrize("make_index", [hourly_index, quarter_hour_index])
+def test_a_model_never_receives_weather_after_the_weather_cut(make_index):
+    table = make_table("2026-10-10", "2026-11-05", make_index)
+    model = Recorder()
+
+    run_days(table, days_from("2026-10-20", 14), make_index, model, COLUMNS, refit_every_days=7,
+             weather=make_weather("2026-10-10", "2026-11-05"), rule=WEATHER)
+
+    assert len(model.predicts) == 14
+    for inputs in model.fits + model.predicts:
+        day = inputs.delivery_day
+        assert inputs.weather.index.max() == market_time(day + timedelta(days=1)) \
+            - timedelta(hours=1)
+        assert inputs.weather["run"].max() == pd.Timestamp(day - timedelta(days=1), tz="UTC")
+
+
+def test_a_model_receives_no_weather_when_the_run_has_no_weather_table():
+    model = Recorder()
+
+    run_days(make_table("2026-06-20", "2026-07-05"), days_from("2026-07-01", 1), hourly_index,
+             model, COLUMNS, refit_every_days=7)
+
+    assert model.predicts[0].weather.empty
+
+
+def test_changing_the_weather_after_its_cut_leaves_the_forecast_unchanged():
+    weather = make_weather("2026-06-20", "2026-07-05")
+    changed = weather.copy()
+    changed.loc[changed.index >= market_time("2026-07-02"), "temperature_2m"] += 1000
+    later_run = weather.copy()
+    on_the_day = later_run.index >= market_time("2026-07-01")
+    later_run.loc[on_the_day, "temperature_2m"] += 1000
+    later_run.loc[on_the_day, "run"] = pd.Timestamp("2026-07-01", tz="UTC")
+
+    before = weather_forecast_of(weather, "2026-07-01")
+
+    pd.testing.assert_series_equal(before, weather_forecast_of(changed, "2026-07-01"))
+    # The hours of the delivery day are missing here, so the sum is lower, not 24000 higher.
+    assert (weather_forecast_of(later_run, "2026-07-01") < before).all()
+
+
+def test_changing_the_last_weather_value_before_its_cut_changes_the_forecast():
+    weather = make_weather("2026-06-20", "2026-07-05")
+    changed = weather.copy()
+    changed.loc[pd.Timestamp("2026-07-01 23:00", tz=MARKET_TZ), "temperature_2m"] += 1000
+
+    before = weather_forecast_of(weather, "2026-07-01")
+    after = weather_forecast_of(changed, "2026-07-01")
+
+    assert (after - before).tolist() == pytest.approx([1000.0] * 24)
+
+
+def weather_project(tmp_path) -> dict:
+    """The small project with a weather point and a weather table for zone A."""
+    config = project_config(tmp_path)
+    config["open_meteo"] = {"variables": ["temperature_2m"], "run_hour_utc": 0}
+    config["backtest"]["weather_run_column"] = "run"
+    config["zones"][1]["weather_point"] = {"place": "X", "latitude": 0.0, "longitude": 0.0}
+    save_tables(config)
+    path = table_path(Path(config["paths"]["processed"]), WEATHER_TABLE, "A")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    make_weather(config["data"]["start"], str(day_after(config["data"]["end"]))).to_parquet(path)
+    return config
+
+
+def test_a_validation_run_reads_no_weather_of_the_test_days(tmp_path):
+    config = weather_project(tmp_path)
+    zone_a = [zone for zone in ordered_zones(config) if zone.key == "A"][0]
+    _, validation_end = split_range(config, "validation")
+
+    weather = read_weather(config, zone_a, validation_end)
+
+    assert weather.index.max() == market_time("2026-10-25") - timedelta(hours=1)
+
+
+def test_a_zone_without_a_weather_point_has_no_weather_table(tmp_path):
+    config = weather_project(tmp_path)
+    zone_b = [zone for zone in ordered_zones(config) if zone.key == "B"][0]
+
+    assert read_weather(config, zone_b, market_time("2026-10-25")) is None
+
+
+def test_the_backtest_of_a_zone_hands_its_weather_to_the_model(tmp_path):
+    config = weather_project(tmp_path)
+    zone_a = [zone for zone in ordered_zones(config) if zone.key == "A"][0]
+    model = Recorder()
+    model.name = "naive"   # the history length is read from the config entry of this name
+
+    backtest_zone(config, zone_a, "H", "validation", model,
+                  run_info={"model": "recorder", "split": "validation"})
+
+    last = model.predicts[-1]
+    assert last.delivery_day == date(2026, 10, 24)
+    assert last.weather.index.max() == market_time("2026-10-25") - timedelta(hours=1)
+    assert last.weather["run"].max() == pd.Timestamp("2026-10-23", tz="UTC")
+
+
+def test_the_command_scores_a_zone_with_weather_as_before(tmp_path):
+    config = weather_project(tmp_path)
+
+    run(config, "naive", "validation")
+
+    core = saved(config, "backtest_core.csv")
+    assert core["mae"].tolist() == [7.0, 7.0]
+    assert core["mtus"].tolist() == [120, 480]
