@@ -124,11 +124,11 @@ def test_check_prices_counts_repeated_timestamps():
 
 def test_download_prices_reports_each_zone_and_year_in_the_given_order(tmp_path):
     client = FakeClient(hourly_prices("2025-01-15", "2025-01-16"))
-    zones = [Zone("DE_LU", "DE", "core"), Zone("SE_1", "SE", "extra")]
+    zones = [Zone("DE_LU", "DE", "core"), Zone("XX", "PL", "extra")]
 
     summary = download_prices(client, zones, [(2025, DAY_START, DAY_END)], tmp_path, SWITCH)
 
-    assert summary["zone"].tolist() == ["DE_LU", "SE_1"]
+    assert summary["zone"].tolist() == ["DE_LU", "XX"]
     assert summary["year"].tolist() == [2025, 2025]
     assert summary["rows"].tolist() == [24, 24]
     assert summary["missing"].tolist() == [0, 0]

@@ -30,7 +30,7 @@ def project_config(tmp_path) -> dict:
     """A config with the core zones A and C and the extra zone B, B first in the file."""
     return {
         "paths": {"results": str(tmp_path / "results")},
-        "zones": [{"key": "B", "holiday_country": "SE", "group": "extra"},
+        "zones": [{"key": "B", "holiday_country": "PL", "group": "extra"},
                   {"key": "A", "holiday_country": "DE", "group": "core"},
                   {"key": "C", "holiday_country": "FR", "group": "core"}],
     }

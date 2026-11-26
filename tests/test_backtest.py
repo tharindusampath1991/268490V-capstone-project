@@ -269,7 +269,7 @@ def project_config(tmp_path, data_start: str = "2026-10-05") -> dict:
                      "price_column": "price", "day_ahead_columns": ["load_forecast"],
                      "delayed_columns": ["actual_load"]},
         "models": {"naive": {"lag_days": 7}},
-        "zones": [{"key": "B", "holiday_country": "SE", "group": "extra"},
+        "zones": [{"key": "B", "holiday_country": "PL", "group": "extra"},
                   {"key": "A", "holiday_country": "DE", "group": "core"}],
     }
 
@@ -704,11 +704,12 @@ def test_the_command_scores_a_zone_with_weather_as_before(tmp_path):
     assert core["mtus"].tolist() == [120, 480]
 
 
-# The holiday dates. In the small project zone A has the German calendar and zone B the Swedish
-# one. 3 October is a public holiday in Germany only and 6 June in Sweden only.
+# The holiday dates. In the small project zone A has the German calendar and zone B the Polish
+# one. Of the three countries used here, 3 October is a public holiday in Germany only,
+# 11 November in Poland only and 6 June in Sweden only.
 
 HOLIDAYS = frozenset({date(2026, 6, 1), date(2026, 10, 25), date(2026, 12, 25)})
-GERMAN_ONLY, SWEDISH_ONLY = date(2026, 10, 3), date(2026, 6, 6)
+GERMAN_ONLY, POLISH_ONLY, SWEDISH_ONLY = date(2026, 10, 3), date(2026, 11, 11), date(2026, 6, 6)
 
 
 def test_a_model_receives_the_holiday_dates_of_the_run_on_every_day():
@@ -776,7 +777,7 @@ def test_the_backtest_of_a_zone_hands_the_holidays_of_its_country_to_the_model(t
     assert len(model.predicts) == 5
     for inputs in model.fits + model.predicts:
         assert GERMAN_ONLY in inputs.holidays
-        assert SWEDISH_ONLY not in inputs.holidays
+        assert POLISH_ONLY not in inputs.holidays
         assert {day.year for day in inputs.holidays} == {2026}
 
 
@@ -790,6 +791,6 @@ def test_one_model_receives_the_holidays_of_each_zone_it_is_run_on(tmp_path):
 
     assert len(model.predicts) == 10
     for inputs in model.predicts[:5]:
-        assert GERMAN_ONLY in inputs.holidays and SWEDISH_ONLY not in inputs.holidays
+        assert GERMAN_ONLY in inputs.holidays and POLISH_ONLY not in inputs.holidays
     for inputs in model.predicts[5:]:
-        assert SWEDISH_ONLY in inputs.holidays and GERMAN_ONLY not in inputs.holidays
+        assert POLISH_ONLY in inputs.holidays and GERMAN_ONLY not in inputs.holidays

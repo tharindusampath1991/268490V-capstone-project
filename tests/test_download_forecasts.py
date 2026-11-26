@@ -13,7 +13,7 @@ from epf.data.download_forecasts import (
 
 FETCHERS = {"load_forecast": fetch_load_forecast, "wind_solar_forecast": fetch_wind_solar_forecast}
 DE_LU = Zone("DE_LU", "DE", "core")
-SE_1 = Zone("SE_1", "SE", "extra")
+XX = Zone("XX", "PL", "extra")
 
 MARKET_TZ = "Europe/Berlin"
 DAY_START = pd.Timestamp("2025-01-15", tz=MARKET_TZ)
@@ -127,10 +127,10 @@ def test_hourly_coverage_counts_repeated_timestamps():
 def test_download_datasets_reports_each_zone_dataset_and_year_in_the_given_order(tmp_path):
     client = FakeClient(hourly_frame("2025-01-15", "2025-01-16", ["Forecasted Load"]))
 
-    summary = download_datasets(client, FETCHERS, [DE_LU, SE_1], [(2025, DAY_START, DAY_END)],
+    summary = download_datasets(client, FETCHERS, [DE_LU, XX], [(2025, DAY_START, DAY_END)],
                                 tmp_path)
 
-    assert summary["zone"].tolist() == ["DE_LU", "DE_LU", "SE_1", "SE_1"]
+    assert summary["zone"].tolist() == ["DE_LU", "DE_LU", "XX", "XX"]
     assert summary["dataset"].tolist() == ["load_forecast", "wind_solar_forecast"] * 2
     assert summary["year"].tolist() == [2025] * 4
 

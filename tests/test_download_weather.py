@@ -28,8 +28,8 @@ SETTINGS = {
 }
 KASSEL = {"place": "Kassel", "latitude": 51.32, "longitude": 9.50}
 DE_LU = Zone("DE_LU", "DE", "core", weather_point=KASSEL)
-SE_1 = Zone("SE_1", "SE", "extra", weather_point={"place": "Lulea", "latitude": 65.58,
-                                                  "longitude": 22.15})
+XX = Zone("XX", "PL", "extra", weather_point={"place": "X", "latitude": 10.0,
+                                              "longitude": 20.0})
 
 
 def market_time(text: str) -> pd.Timestamp:
@@ -246,14 +246,14 @@ def test_fetch_weather_returns_no_rows_when_no_run_is_archived():
 def test_download_weather_reports_each_zone_year_and_variable_in_the_given_order(tmp_path):
     ranges = [(2025, market_time("2025-01-15"), market_time("2025-01-17"))]
 
-    summary = download_weather(FakeApi(), SETTINGS, [DE_LU, SE_1], ranges, tmp_path,
+    summary = download_weather(FakeApi(), SETTINGS, [DE_LU, XX], ranges, tmp_path,
                                sleep=no_sleep)
 
     assert summary.to_dict("records")[0] == {
         "zone": "DE_LU", "year": 2025, "column": "temperature_2m", "rows": 48, "runs": 2,
         "expected_hours": 48, "missing_hours": 0, "repeated": 0,
     }
-    assert summary["zone"].tolist() == ["DE_LU", "DE_LU", "SE_1", "SE_1"]
+    assert summary["zone"].tolist() == ["DE_LU", "DE_LU", "XX", "XX"]
     assert summary["column"].tolist() == ["temperature_2m", "shortwave_radiation"] * 2
     assert (tmp_path / "weather_forecast" / "DE_LU_2025.parquet").exists()
 
@@ -262,10 +262,10 @@ def test_download_weather_uses_the_point_of_each_zone(tmp_path):
     api = FakeApi()
     ranges = [(2025, market_time("2025-01-15"), market_time("2025-01-16"))]
 
-    download_weather(api, SETTINGS, [DE_LU, SE_1], ranges, tmp_path, sleep=no_sleep)
+    download_weather(api, SETTINGS, [DE_LU, XX], ranges, tmp_path, sleep=no_sleep)
 
     assert [(params["latitude"], params["longitude"]) for _, params in api.calls] == [
-        (51.32, 9.50), (65.58, 22.15)]
+        (51.32, 9.50), (10.0, 20.0)]
 
 
 def test_download_weather_counts_the_hours_of_a_missing_run(tmp_path):

@@ -36,7 +36,7 @@ def project_config(tmp_path) -> dict:
         "splits": {"validation_start": "2025-03-12"},
         "paths": {"processed": str(tmp_path / "processed"), "figures": str(tmp_path / "figures")},
         "eda": {"spike_window_days": 28, "spike_sd": 3},
-        "zones": [{"key": "XX", "holiday_country": "SE", "group": "extra"},
+        "zones": [{"key": "XX", "holiday_country": "PL", "group": "extra"},
                   {"key": "AA", "holiday_country": "DE", "group": "core"}],
     }
 

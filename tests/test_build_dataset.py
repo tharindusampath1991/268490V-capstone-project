@@ -25,7 +25,7 @@ from epf.data.validate import HOURLY, QUARTER_HOUR, WEATHER_TABLE, table_path
 MARKET_TZ = "Europe/Berlin"
 SWITCH = pd.Timestamp("2025-10-01", tz=MARKET_TZ)
 MADRID = {"place": "Madrid", "latitude": 40.42, "longitude": -3.70}
-LULEA = {"place": "Luleå", "latitude": 65.58, "longitude": 22.15}
+MADE_UP_POINT = {"place": "X", "latitude": 10.0, "longitude": 20.0}
 
 
 def market_time(text: str) -> pd.Timestamp:
@@ -205,7 +205,7 @@ def save_raw_zone(raw_dir, zone_key: str, first_day: str, day_after_last: str,
 def project_config(tmp_path, last_day: str | None, approved: dict) -> dict:
     """A config that starts on 24 October 2026, with its folders under tmp_path.
 
-    The extra zone SE_1 is listed before the core zone ES and has its Solar column dropped.
+    The extra zone XX is listed before the core zone ES and has its Solar column dropped.
     """
     gaps_path = tmp_path / "approved_gaps.yaml"
     gaps_path.write_text(yaml.safe_dump(approved), encoding="utf-8")
@@ -215,9 +215,10 @@ def project_config(tmp_path, last_day: str | None, approved: dict) -> dict:
         "open_meteo": {"first_run": "2024-03-14", "variables": ["temperature_2m"]},
         "paths": {"raw": str(tmp_path / "raw"), "processed": str(tmp_path / "processed"),
                   "approved_gaps": str(gaps_path)},
-        "coverage_gate": {"drop_columns": [{"zone": "SE_1", "column": "Solar"}]},
+        "coverage_gate": {"drop_columns": [{"zone": "XX", "column": "Solar"}]},
         "zones": [
-            {"key": "SE_1", "holiday_country": "SE", "group": "extra", "weather_point": LULEA},
+            {"key": "XX", "holiday_country": "PL", "group": "extra",
+             "weather_point": MADE_UP_POINT},
             {"key": "ES", "holiday_country": "ES", "group": "core", "weather_point": MADRID},
         ],
     }
@@ -232,12 +233,12 @@ def no_gaps(columns: list[str]) -> dict:
 APPROVED = {
     "ES": no_gaps(["price", "load_forecast", "wind_onshore_forecast", "solar_forecast",
                    "actual_load"]),
-    "SE_1": no_gaps(["price", "load_forecast", "wind_onshore_forecast", "actual_load"]),
+    "XX": no_gaps(["price", "load_forecast", "wind_onshore_forecast", "actual_load"]),
 }
 
 
 def test_run_builds_and_validates_the_tables_of_every_zone_core_first(tmp_path, capsys):
-    for zone_key in ["ES", "SE_1"]:
+    for zone_key in ["ES", "XX"]:
         save_raw_zone(tmp_path / "raw", zone_key, "2026-10-24", "2026-10-29")
 
     run(project_config(tmp_path, "2026-10-26", APPROVED))
@@ -245,16 +246,16 @@ def test_run_builds_and_validates_the_tables_of_every_zone_core_first(tmp_path, 
     # Raw data runs to 28 October. The tables end with delivery day 26 October:
     # 24 + 25 + 24 hours, because the clocks go back on 25 October.
     solar = {}
-    for zone_key in ["ES", "SE_1"]:
+    for zone_key in ["ES", "XX"]:
         hourly = pd.read_parquet(table_path(tmp_path / "processed", HOURLY, zone_key))
         quarter = pd.read_parquet(table_path(tmp_path / "processed", QUARTER_HOUR, zone_key))
         weather = pd.read_parquet(table_path(tmp_path / "processed", WEATHER_TABLE, zone_key))
         assert (len(hourly), len(quarter), len(weather)) == (73, 292, 73)
         assert hourly.index.max() == pd.Timestamp("2026-10-26 22:00", tz="UTC")
         solar[zone_key] = "solar_forecast" in hourly.columns
-    assert solar == {"ES": True, "SE_1": False}
+    assert solar == {"ES": True, "XX": False}
     printed = capsys.readouterr().out
-    assert printed.index("ES     build") < printed.index("SE_1   build")
+    assert printed.index("ES     build") < printed.index("XX     build")
     assert "Validation passed." in printed
 
 
@@ -267,7 +268,7 @@ def test_run_exits_while_the_last_delivery_day_is_not_set(tmp_path):
 
 
 def test_run_exits_with_an_error_when_a_built_table_has_a_gap_that_was_not_approved(tmp_path):
-    save_raw_zone(tmp_path / "raw", "SE_1", "2026-10-24", "2026-10-29")
+    save_raw_zone(tmp_path / "raw", "XX", "2026-10-24", "2026-10-29")
     save_raw_zone(tmp_path / "raw", "ES", "2026-10-24", "2026-10-29", load_rows_left_out=8)
 
     with pytest.raises(SystemExit) as stopped:
