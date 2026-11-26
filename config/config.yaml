@@ -102,6 +102,27 @@ backtest:
   # model run started at or before open_meteo.run_hour_utc on D-1. This column holds the run.
   weather_run_column: run
 
+# Features of the LightGBM model (docs/DECISIONS.md, entries 69 to 80). One list for all
+# seven zones. A lag is the value at the same wall-clock time in market time some days
+# before. The price lags were measured on train days (docs/MODEL_NOTES.md).
+features:
+  # The groups that are built. price, calendar, actual_load and weather are fixed names, the
+  # others are the keys of forecasts below. Leave a group out to build without it (RQ2).
+  groups: [price, calendar, load_forecast, wind_forecast, solar_forecast, actual_load, weather]
+  price_lag_days: [1, 2, 3, 4, 5, 6, 7]
+  price_day_stats: [mean, min, max, last]   # of the prices of D-1
+  # Feature name: the day-ahead columns summed into it. A zone uses the columns it has. A
+  # zone that has none of them, such as a Swedish zone for solar, gets an empty feature.
+  forecasts:
+    load_forecast: [load_forecast]
+    wind_forecast: [wind_onshore_forecast, wind_offshore_forecast]
+    solar_forecast: [solar_forecast]
+  forecast_lag_days: [1, 7]                 # besides the forecast at the target time
+  actual_load_lag_days: [2]                 # the D-2 cut leaves a lag of 1 day empty
+  # Weather columns that hold the mean of the hour before their timestamp. The delivery hour
+  # that starts at t takes the value stamped t plus one hour.
+  weather_hour_before: [shortwave_radiation]
+
 # Model settings, copied into every results row. --model of the backtest takes a name from here.
 models:
   naive:
