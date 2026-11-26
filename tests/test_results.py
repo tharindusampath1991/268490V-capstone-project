@@ -14,6 +14,7 @@ from epf.evaluation.results import (
     peak_memory_mb,
     peak_of,
     read_forecasts,
+    read_rows,
     replace_rows,
     results_path,
     write_forecasts,
@@ -62,6 +63,17 @@ def test_append_rows_keeps_a_column_that_only_later_rows_have(tmp_path):
 
 # Numbers that the default pandas parser reads back with another last digit.
 LONG_NUMBERS = [62.167291666666664, 0.27784269995754585]
+
+
+def test_read_rows_returns_every_number_exactly_as_it_was_written(tmp_path):
+    path = tmp_path / "backtest_core.csv"
+    append_rows(path, rows("naive", "ES", LONG_NUMBERS))
+
+    saved = read_rows(path)
+
+    assert saved["mae"].tolist() == LONG_NUMBERS
+    assert pd.read_csv(path)["mae"].tolist() != LONG_NUMBERS
+    assert saved[["model", "zone"]].to_dict("records") == [{"model": "naive", "zone": "ES"}] * 2
 
 
 def test_append_rows_leaves_the_saved_lines_unchanged_to_the_last_digit(tmp_path):
