@@ -152,10 +152,48 @@ def test_project_config_builds_every_model_entry_under_its_own_name():
         assert build_model(config, name).name == name
 
 
-def test_project_config_holds_candidates_of_the_three_statistical_families():
+def test_project_config_holds_candidates_of_the_statistical_families_and_lightgbm():
     entries = load_config()["models"].values()
 
-    assert {entry["family"] for entry in entries if "family" in entry} == {"arima", "ets", "mstl"}
+    families = {entry["family"] for entry in entries if "family" in entry}
+
+    assert families == {"arima", "ets", "mstl", "lgbm"}
+
+
+PRICE_GROUPS = ["price", "calendar"]
+FORECAST_GROUPS = [*PRICE_GROUPS, "load_forecast", "wind_forecast", "solar_forecast"]
+LOAD_GROUPS = [*FORECAST_GROUPS, "actual_load"]
+ALL_GROUPS = [*LOAD_GROUPS, "weather"]
+# The approved LightGBM candidates: the feature groups and the days of history of each.
+# None stands for an entry without history_days, which receives every day.
+LGBM_CANDIDATES = {
+    "lgbm_price": (PRICE_GROUPS, None),
+    "lgbm_fcst": (FORECAST_GROUPS, None),
+    "lgbm_load": (LOAD_GROUPS, None),
+    "lgbm_all": (ALL_GROUPS, None),
+    "lgbm_load_826": (LOAD_GROUPS, 826),
+    "lgbm_all_826": (ALL_GROUPS, 826),
+    "lgbm_load_364": (LOAD_GROUPS, 364),
+    "lgbm_all_364": (ALL_GROUPS, 364),
+}
+
+
+def lgbm_entry(groups: list[str], history_days: int | None) -> dict:
+    """One approved LightGBM entry as config/config.yaml holds it."""
+    entry = {"family": "lgbm", "groups": groups, "objective": "regression", "trees": 100,
+             "params": {}}
+    if history_days is not None:
+        entry["history_days"] = history_days
+    return entry
+
+
+def test_project_config_holds_the_approved_lightgbm_candidates():
+    models = load_config()["models"]
+
+    found = {name: entry for name, entry in models.items() if entry.get("family") == "lgbm"}
+
+    assert found == {name: lgbm_entry(groups, history_days)
+                     for name, (groups, history_days) in LGBM_CANDIDATES.items()}
 
 
 def test_project_config_names_a_frozen_statistical_baseline_that_is_a_model_entry():
