@@ -93,6 +93,9 @@ backtest:
   # had the lowest mean relative MAE over the seven zones on the validation days of
   # experiment H. Never change it.
   lightgbm_model: lgbm_load_826_slow
+  # Levels of the quantile forecasts of the frozen LightGBM setting. A level and its mirror
+  # around the median give an interval: 0.25 to 0.75 holds 50% and 0.05 to 0.95 holds 90%.
+  quantile_levels: [0.05, 0.25, 0.5, 0.75, 0.95]
   # Models that may be scored on the test days. Every other model is refused there.
   # mstl_182 was added on 2026-11-25, after it was frozen and the owner said yes.
   # lgbm_load_826_slow was added on 2026-11-26, after it was frozen and the owner said yes.

@@ -14,6 +14,7 @@ from epf.data.market_time import split_starts
 from epf.data.validate import HOURLY, QUARTER_HOUR, WEATHER_TABLE, load_approved_gaps
 from epf.evaluation.backtest import build_model
 from epf.evaluation.cutoff import cut_columns
+from epf.evaluation.quantiles import quantile_model
 from epf.features.holiday_calendar import holiday_dates
 
 
@@ -228,3 +229,24 @@ def test_project_config_names_a_frozen_lightgbm_model_that_is_a_model_entry():
     assert name == "lgbm_load_826_slow"
     assert config["models"][name]["family"] == "lgbm"
     assert build_model(config, name).name == name
+
+
+def test_project_config_holds_the_five_quantile_levels():
+    backtest = load_config()["backtest"]
+
+    assert backtest["quantile_levels"] == [0.05, 0.25, 0.5, 0.75, 0.95]
+
+
+def test_project_config_builds_a_quantile_model_from_the_frozen_lightgbm_entry():
+    config = load_config()
+    name = config["backtest"]["lightgbm_model"]
+
+    model = quantile_model(config)
+
+    assert model.name == f"{name}_quantiles"
+    assert model.name not in config["backtest"]["test_models"]
+    assert model.name not in config["models"]
+    assert model.settings == config["models"][name]
+    assert model.levels == (0.05, 0.25, 0.5, 0.75, 0.95)
+    assert model.features == build_model(config, name).features
+    assert model.seed == config["seed"]

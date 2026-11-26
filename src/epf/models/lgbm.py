@@ -24,9 +24,15 @@ Two fits on the same rows with the same seed gave the same forecast in the
 tests. LightGBM states this for one machine and one version of the library
 only, with deterministic and force_col_wise set, as they are here.
 
+LgbmQuantileModel gives quantile forecasts of the same entry: one set of trees
+per level, grown on the same training rows. Each level is fitted on its own,
+so the values of a market time unit can cross. They are handed back as
+LightGBM gives them.
+
 Prices are in EUR/MWh. Tables have a UTC index. Delivery days are in market time.
 """
 
+import math
 from collections.abc import Collection
 from dataclasses import replace
 from datetime import timedelta
@@ -45,6 +51,9 @@ HISTORY = "history_days"
 REQUIRED_KEYS = ("family", "groups", "objective", "trees", "params")
 # The names under which LightGBM stores the squared and the absolute error.
 OBJECTIVES = ("regression", "regression_l1")
+# The LightGBM objective of a quantile fit. Its level is the parameter alpha.
+QUANTILE = "quantile"
+LEVELS = "quantile_levels"
 ALLOWED_PARAMS = ("learning_rate", "num_leaves", "max_depth", "min_data_in_leaf",
                   "feature_fraction", "bagging_fraction", "bagging_freq", "lambda_l1",
                   "lambda_l2", "max_bin")
@@ -92,13 +101,8 @@ class LgbmModel:
             allow.
         """
         rows, target = training_rows(inputs, self.features, self.columns, self.rule)
-        try:
-            self.booster = lightgbm.train(train_params(self.settings, self.seed),
-                                          lightgbm.Dataset(rows, label=target),
-                                          num_boost_round=self.settings["trees"])
-        except lightgbm.basic.LightGBMError as error:
-            raise ValueError(f"LightGBM refused the fit of the entry '{self.name}': "
-                             f"{error}") from error
+        self.booster = grow_trees(self.name, train_params(self.settings, self.seed),
+                                  lightgbm.Dataset(rows, label=target), self.settings["trees"])
         self.feature_names = list(rows.columns)
 
     def predict(self, inputs: DayInputs) -> pd.Series:
@@ -109,15 +113,76 @@ class LgbmModel:
         Raises ValueError when the model has not been fitted, and when the
             features are not those of the fit, in name or in order.
         """
-        if self.booster is None:
-            raise ValueError(f"The model '{self.name}' has not been fitted, so it cannot "
-                             f"forecast {inputs.delivery_day}.")
-        rows = day_features(inputs, self.features, inputs.holidays)
-        # LightGBM takes the columns by their position and does not compare the names.
-        if list(rows.columns) != self.feature_names:
-            raise ValueError(f"The features of {inputs.delivery_day} are {list(rows.columns)}. "
-                             f"The model was fitted on {self.feature_names}.")
+        rows = fitted_day_features(self.name, inputs, self.features, self.feature_names)
         return pd.Series(self.booster.predict(rows), index=inputs.target_index, name=FORECAST)
+
+
+class LgbmQuantileModel:
+    """Quantile forecasts of a LightGBM config entry: one set of trees per level."""
+
+    def __init__(self, name: str, settings: dict, levels: list[float],
+                 features: FeatureSettings, columns: Columns, rule: WeatherRule, seed: int):
+        """Keep the name, the settings of a config entry, the levels and the feature inputs.
+
+        Input: the name of the model in the results, and the settings of a
+            LightGBM entry as LgbmModel takes them. Its objective is not
+            used: every level is fitted with the objective quantile. Then the
+            quantile levels, for example 0.05 for the 5% quantile, the
+            feature settings of the config, the columns under each cut, the
+            weather rule and the seed.
+        Raises ValueError for settings that check_settings or the feature
+            builder refuses, and for levels that check_levels refuses.
+        """
+        check_settings(settings, features)
+        check_levels(levels)
+        self.name = name
+        self.settings = settings
+        self.levels = tuple(levels)
+        self.features = model_features(features, settings["groups"], columns.day_ahead)
+        self.columns = columns
+        self.rule = rule
+        self.seed = seed
+        self.boosters: dict[float, lightgbm.Booster] = {}
+        self.feature_names: list[str] | None = None
+
+    @property
+    def params(self) -> dict:
+        """The settings of the entry with the objective that was fitted and the levels."""
+        return {**self.settings, "objective": QUANTILE, LEVELS: list(self.levels)}
+
+    def fit(self, inputs: DayInputs) -> None:
+        """Grow the trees of every level on the training rows of the inputs.
+
+        The training rows are built once and are those of LgbmModel. The
+        trees and the feature names of an earlier fit are replaced.
+        Raises ValueError when there is no training day, and when LightGBM
+            refuses a fit, for example for a parameter value it does not
+            allow.
+        """
+        rows, target = training_rows(inputs, self.features, self.columns, self.rule)
+        # One Dataset serves every level. The levels differ in the objective only, and the
+        # Dataset holds the rows and their bins, which do not depend on it.
+        data = lightgbm.Dataset(rows, label=target)
+        self.boosters = {
+            level: grow_trees(self.name, quantile_params(self.settings, self.seed, level),
+                              data, self.settings["trees"])
+            for level in self.levels}
+        self.feature_names = list(rows.columns)
+
+    def predict_quantiles(self, inputs: DayInputs) -> pd.DataFrame:
+        """Return the quantile forecasts for the market time units of the delivery day.
+
+        Output: a frame on inputs.target_index (UTC) with one column per
+            level, named by the level, in EUR/MWh. The values are as LightGBM
+            gives them. They are not sorted, so a lower level can stand above
+            a higher one.
+        Raises ValueError when the model has not been fitted, and when the
+            features are not those of the fit, in name or in order.
+        """
+        rows = fitted_day_features(self.name, inputs, self.features, self.feature_names)
+        return pd.DataFrame({level: booster.predict(rows)
+                             for level, booster in self.boosters.items()},
+                            index=inputs.target_index)
 
 
 def check_settings(settings: dict, features: FeatureSettings) -> None:
@@ -182,6 +247,33 @@ def check_kinds(settings: dict) -> None:
     if history is not None and not is_whole_number(history):
         problems.append(f"{HISTORY} must be a whole number or empty, not {history!r}")
     refuse(problems)
+
+
+def check_levels(levels: list[float]) -> None:
+    """Refuse quantile levels that do not pair up into intervals.
+
+    Input: the levels, each the share of prices that should fall below its forecast.
+    Raises ValueError when they are not a list of decimal numbers, and for
+        fewer than two levels, a level that is not between 0 and 1, levels
+        that do not ascend, and a level whose mirror 1 - level is missing.
+        With its mirror every level below 0.5 is the low end of an interval.
+    """
+    if not isinstance(levels, (list, tuple)) or not all(isinstance(level, float)
+                                                        for level in levels):
+        raise ValueError(f"Quantile levels: they must be a list of decimal numbers, "
+                         f"not {levels!r}.")
+    problems = []
+    if len(levels) < 2:
+        problems.append("there must be at least two")
+    if not all(0 < level < 1 for level in levels):
+        problems.append("each must lie between 0 and 1")
+    if not all(low < high for low, high in zip(levels, levels[1:])):
+        problems.append("they must ascend")
+    # 1 - 0.95 is not exactly 0.05 in binary floating point, so the mirror is compared closely.
+    if not all(any(math.isclose(1 - level, other) for other in levels) for level in levels):
+        problems.append("every level needs its mirror 1 - level")
+    if problems:
+        raise ValueError(f"Quantile levels {list(levels)}: " + "; ".join(problems) + ".")
 
 
 def is_whole_number(value: object) -> bool:
@@ -304,3 +396,50 @@ def train_params(settings: dict, seed: int) -> dict:
     # verbosity keeps the level of the fit before it.
     return {**settings["params"], "objective": settings["objective"], "seed": seed,
             "deterministic": True, "force_col_wise": True, "verbosity": -1}
+
+
+def quantile_params(settings: dict, seed: int, level: float) -> dict:
+    """Return the LightGBM parameters of the fit of one quantile level.
+
+    Input: the settings of a config entry, the seed of the project and the level.
+    Output: the parameters of train_params with the objective quantile in
+        place of the objective of the entry, and the level as alpha.
+    """
+    return {**train_params(settings, seed), "objective": QUANTILE, "alpha": level}
+
+
+def grow_trees(name: str, params: dict, data: lightgbm.Dataset, trees: int) -> lightgbm.Booster:
+    """Train one set of trees.
+
+    Input: the name of the model for the error message, the LightGBM
+        parameters, the training rows with their target and the number of
+        boosting rounds.
+    Raises ValueError when LightGBM refuses the fit, for example for a
+        parameter value it does not allow.
+    """
+    try:
+        return lightgbm.train(params, data, num_boost_round=trees)
+    except lightgbm.basic.LightGBMError as error:
+        raise ValueError(f"LightGBM refused the fit of the entry '{name}': {error}") from error
+
+
+def fitted_day_features(name: str, inputs: DayInputs, features: FeatureSettings,
+                        feature_names: list[str] | None) -> pd.DataFrame:
+    """Return the features of the delivery day after checking that the trees can read them.
+
+    Input: the name of the model for the error message, the inputs of the
+        day, the feature settings of the model and the feature names of its
+        last fit. None means that it has not been fitted.
+    Output: one row per market time unit of the day, built from its inputs.
+    Raises ValueError when the model has not been fitted, and when the
+        features are not those of the fit, in name or in order.
+    """
+    if feature_names is None:
+        raise ValueError(f"The model '{name}' has not been fitted, so it cannot forecast "
+                         f"{inputs.delivery_day}.")
+    rows = day_features(inputs, features, inputs.holidays)
+    # LightGBM takes the columns by their position and does not compare the names.
+    if list(rows.columns) != feature_names:
+        raise ValueError(f"The features of {inputs.delivery_day} are {list(rows.columns)}. "
+                         f"The model was fitted on {feature_names}.")
+    return rows
