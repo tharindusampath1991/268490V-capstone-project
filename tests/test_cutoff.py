@@ -188,6 +188,15 @@ def test_weather_from_a_later_run_is_cut_although_it_stands_on_the_delivery_day(
     assert inputs.weather.index.max() == market_time("2026-07-01") - timedelta(hours=1)
 
 
+def test_weather_from_a_run_one_hour_after_the_run_hour_is_cut():
+    weather = make_weather("2026-06-20", "2026-07-05")
+    weather.loc[hours_of(weather, "2026-07-01"), "run"] = run_time("2026-06-30", hour=1)
+
+    inputs = weather_inputs_for(weather, "2026-07-01")
+
+    assert inputs.weather.index.max() == market_time("2026-07-01") - timedelta(hours=1)
+
+
 def test_weather_after_the_delivery_day_is_cut_although_its_run_is_old():
     weather = make_weather("2026-06-20", "2026-07-05")
     weather.loc[hours_of(weather, "2026-07-02"), "run"] = run_time("2026-06-30")

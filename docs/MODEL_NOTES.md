@@ -1002,7 +1002,7 @@ Where the empty cells come from:
 
 ### 5. Checks
 
-- Tests: 627 pass. 129 of them are new: 16 for the weather cut, 9 for the weather in the backtest, 97 for the builder and 7 for the command.
+- Tests: 628 pass. 130 of them are new: 17 for the weather cut, 9 for the weather in the backtest, 97 for the builder and 7 for the command.
 - Every cell of the 14 saved frames was compared with a plain pandas computation on the whole table, which does not call the builder and does not go through `day_inputs`: 21635852 cells, 0 different, 0 empty in one of the two only. The largest difference is 1.1e-13.
 - Each frame stands on exactly the time steps of its table, has no repeated timestamp and no infinite value, and ends with the last time step of 2026-11-19.
 - The empty cells of the features at the target time equal what `config/approved_gaps.yaml` gives: 98 comparisons of zone, experiment and feature, 0 not equal.
