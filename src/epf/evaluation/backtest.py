@@ -60,7 +60,9 @@ from epf.evaluation.cutoff import (
     weather_rule,
 )
 from epf.evaluation.metrics import daily_losses, mae, relative_mae, rmse
+from epf.features.builder import feature_settings
 from epf.features.holiday_calendar import holiday_dates
+from epf.models import lgbm
 from epf.models.naive import SeasonalNaive
 from epf.models.stats import StatsModel
 from epf.seed import set_seed
@@ -162,7 +164,11 @@ def build_model(config: dict, name: str) -> Model:
     """Return the model with a name, set up from its entry under models in the config.
 
     The entry named naive is the seasonal naive forecast. Every other entry
-    is a statistical model and names its family.
+    names its family. An entry of the family lgbm is the LightGBM model. It
+    also gets the feature settings, the columns under each cut, the weather
+    rule and the seed of the config, and only such an entry needs the
+    sections features and open_meteo. An entry of any other family is a
+    statistical model.
     Raises ValueError for a name that has no entry, for an entry without a
         family and for settings that the model refuses.
     """
@@ -173,6 +179,9 @@ def build_model(config: dict, name: str) -> Model:
         return SeasonalNaive(entries[name]["lag_days"])
     if "family" not in entries[name]:
         raise ValueError(f"The model entry '{name}' names no family.")
+    if entries[name]["family"] == lgbm.FAMILY:
+        return lgbm.LgbmModel(name, entries[name], feature_settings(config), cut_columns(config),
+                              weather_rule(config), set_seed(config))
     return StatsModel(name, entries[name])
 
 
