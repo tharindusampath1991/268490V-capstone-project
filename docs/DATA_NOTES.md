@@ -297,8 +297,9 @@ Counts from `python -m epf.data.clean` on 2026-11-24, in values that are not emp
 - Experiment H: `hourly_prices` and `align_to_hours`. From 2025-10-01 the price of an hour is the mean of its four quarter-hour prices.
 - Experiment Q: `quarter_hour_prices` and `align_to_quarter_hours`. An hourly forecast value is repeated on its four quarter-hours.
 - Weather columns: `temperature_2m`, `wind_speed_10m`, `wind_speed_100m`, `shortwave_radiation` and `run`, as downloaded. `run` is the start time of the model run. Weather is not put on the 15-minute grid.
-- `actual_load` stands at its own delivery time. A forecast for delivery day D may use it through D-2 only (PROJECT_CONTEXT §5). The feature builder must apply that cut.
-- `shortwave_radiation` is the mean of the hour before its timestamp. The ENTSO-E values apply from their timestamp on. The feature builder must line them up.
+- `actual_load` stands at its own delivery time. A forecast for delivery day D may use it through D-2 only (PROJECT_CONTEXT §5). The feature builder applies that cut through `cutoff.py` and reads actual load two days before (DECISIONS entry 73).
+- `shortwave_radiation` is the mean of the hour before its timestamp. The ENTSO-E values apply from their timestamp on. The feature builder takes the value stamped one hour later, and the last hour of a delivery day stays empty (DECISIONS entry 79).
+- The feature frames built from these tables, with their empty cells per feature and zone, are described in `docs/MODEL_NOTES.md`, "LightGBM features".
 
 ### Gaps that stay empty
 

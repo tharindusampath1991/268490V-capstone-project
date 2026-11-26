@@ -32,7 +32,7 @@ On Linux or macOS, use `.venv/bin/python` in the second command.
 
 The second command also installs the project's own package, `src/epf`, in editable mode.
 
-Run the tests with `.venv\Scripts\python -m pytest`. They use no network and no data files, and take about 40 seconds.
+Run the tests with `.venv\Scripts\python -m pytest`. They use no network and no data files, and take about 50 seconds.
 
 ## ENTSO-E token
 
@@ -133,7 +133,7 @@ The notebook [notebooks/01_eda_drivers.ipynb](notebooks/01_eda_drivers.ipynb) ca
 
 ## Backtest
 
-Every model runs through one backtest. For each delivery day D it gets only what is known on D-1 before the 12:00 gate closure: prices through D-1, the day-ahead load, wind and solar forecast for D, and actual load through D-2 (DECISIONS entry 51). It returns one forecast per market time unit of D.
+Every model runs through one backtest. For each delivery day D it gets only what is known on D-1 before the 12:00 gate closure: prices through D-1, the day-ahead load, wind and solar forecast for D, and actual load through D-2 (DECISIONS entry 51). It also gets the weather forecast for D from the model run of D-1 (entry 78). It returns one forecast per market time unit of D.
 
 Once the tables are built, this scores the seasonal naive forecast on the 60 validation days:
 
@@ -177,6 +177,33 @@ Relative MAE of `mstl_182` against the seasonal naive forecast. Milestone 1 appr
 | Mean | 0.6887 | 0.6831 | 0.5666 | 0.5691 |
 
 The test values are lower than the validation values because the naive forecast was much worse on the test days. Its mean MAE on experiment H rose from 29.63 to 54.83 EUR/MWh, and that of `mstl_182` from 20.33 to 30.09 (DECISIONS entry 67).
+
+## Features for LightGBM
+
+The LightGBM model is not trained yet. Its features are built and tested. Once the tables are built:
+
+```
+.venv\Scripts\python -m epf.features.build
+```
+
+- It builds one frame per zone and experiment, with one row per market time unit: 28 features on the hourly table and 29 on the 15-minute table.
+- Each delivery day is built from inputs cut to that day, by the same code as the backtest (DECISIONS entry 69). The price of the delivery day is never in the frame.
+- The feature groups are switched in `features.groups` of `config/config.yaml`:
+
+| Group | Features |
+|---|---|
+| `price` | The price at the same local time 1 to 7 days before, and the mean, minimum, maximum and last price of D-1 |
+| `calendar` | Hour, weekday and holiday in market time, and the quarter of the hour on the 15-minute table |
+| `load_forecast`, `wind_forecast`, `solar_forecast` | Each day-ahead forecast at the target time and 1 and 7 days before. The wind forecast is onshore plus offshore |
+| `actual_load` | Actual load 2 days before |
+| `weather` | Temperature, wind speed at 10 m and 100 m and solar radiation, from the weather forecast run of D-1 |
+
+- All seven zones have the same columns. SE1 to SE4, which were added after Milestone 1, have no solar forecast, so their solar features are empty.
+- Nothing is filled and no row is dropped. A feature is empty where its source is empty.
+- Weather forecasts exist from delivery day 2024-03-15 only, so the weather features are empty before that day.
+- The command prints the rows and the empty cells per feature and zone. It takes about 4 minutes and saves a copy under `data/features/`, which git ignores. The backtest never reads these files.
+
+The numbers behind the choice of the features and the checks of the built frames are in [docs/MODEL_NOTES.md](docs/MODEL_NOTES.md), "LightGBM features". The reasons are in DECISIONS entries 69 to 80.
 
 ## Environment
 

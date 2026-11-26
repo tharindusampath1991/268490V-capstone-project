@@ -597,3 +597,450 @@ The commits of 25 Nov 2026:
 | `31bfb35` | `mstl_182` added to `backtest.test_models` |
 | `ab6d1ec` | the test rows of `mstl_182` |
 | `59ff2fb` | DECISIONS entries 62 to 67, README, PROJECT_CONTEXT, PROGRESS |
+
+## LightGBM features
+
+Built on 26 Nov 2026 (DECISIONS entries 69 to 80). No LightGBM model has run yet. This section holds what was measured to choose the features, and the checks of the built frames. Every measurement that chose a feature reads train delivery days only.
+
+### In short
+
+- `python -m epf.features.build` builds one frame per zone and experiment: one row per market time unit, 28 features on the hourly table and 29 on the 15-minute table.
+- Each delivery day is built from inputs cut to that day by `day_inputs` of `src/epf/evaluation/cutoff.py`. The price of the delivery day is never in the frame.
+- Every zone has the same columns. The Swedish zones have no solar forecast, so their three solar features are empty.
+- The hourly frames have 69120 rows per zone and the 15-minute frames 39844. All 21635852 cells equal a plain pandas computation on the whole table.
+- Weather exists from delivery day 2024-03-15 only.
+
+### 1. The features
+
+| Group | Features | Read from | Known through |
+|---|---|---|---|
+| `price` | `price_lag_1` to `price_lag_7` | The price at the same wall-clock time 1 to 7 days before | End of D-1 |
+| `price` | `price_d1_mean`, `price_d1_min`, `price_d1_max`, `price_d1_last` | Every price of D-1. One number per day, repeated on its rows | End of D-1 |
+| `calendar` | `hour`, `weekday`, `holiday`, and `quarter_hour` on the 15-minute frame | The delivery day in market time. `holiday` is a nationwide holiday of the country of the zone | Known in advance |
+| `load_forecast` | `load_forecast`, `load_forecast_lag_1`, `load_forecast_lag_7` | The day-ahead load forecast at the target time and 1 and 7 days before | End of D |
+| `wind_forecast` | `wind_forecast`, `wind_forecast_lag_1`, `wind_forecast_lag_7` | Onshore plus offshore wind forecast. Offshore exists in DE_LU only | End of D |
+| `solar_forecast` | `solar_forecast`, `solar_forecast_lag_1`, `solar_forecast_lag_7` | The day-ahead solar forecast. Empty in SE_1 to SE_4 | End of D |
+| `actual_load` | `actual_load_lag_2` | Actual load at the same wall-clock time 2 days before | End of D-2 |
+| `weather` | `temperature_2m`, `wind_speed_10m`, `wind_speed_100m`, `shortwave_radiation` | The weather forecast of the hour, from the 00:00 UTC run of D-1 | End of D, and run of D-1 |
+
+- A lag follows the wall clock in market time, as the seasonal naive forecast does. `price_lag_7` equals that forecast (entry 76).
+- `shortwave_radiation` is taken one hour later than its timestamp, and the last hour of every day is empty (entry 79).
+- Nothing is filled and no row is dropped (entry 77).
+- The groups are switched in `features.groups` of the config (entry 74).
+
+### 2. Price lags and inputs, measured on train days
+
+The owner chose the features after seeing these numbers. A lag is the value at the same wall-clock time k days before. R2 is from a least-squares fit with an intercept, fitted and scored on the same rows. "fc" is the load, wind and solar forecast.
+
+```
+===== train tables: rows and empty values per column =====
+hourly       DE_LU  rows 65519  steps ['0 days 01:00:00']  last 2026-06-22 21:00:00+00:00  empty: price 0, load_forecast 50, wind_onshore_forecast 3, wind_offshore_forecast 0, solar_forecast 3, actual_load 0
+hourly       FR     rows 65519  steps ['0 days 01:00:00']  last 2026-06-22 21:00:00+00:00  empty: price 0, load_forecast 0, wind_onshore_forecast 350, solar_forecast 376, actual_load 50
+hourly       ES     rows 65519  steps ['0 days 01:00:00']  last 2026-06-22 21:00:00+00:00  empty: price 0, load_forecast 1, wind_onshore_forecast 385, solar_forecast 169, actual_load 39
+hourly       SE_1   rows 65519  steps ['0 days 01:00:00']  last 2026-06-22 21:00:00+00:00  empty: price 0, load_forecast 24, wind_onshore_forecast 192, actual_load 0
+hourly       SE_2   rows 65519  steps ['0 days 01:00:00']  last 2026-06-22 21:00:00+00:00  empty: price 0, load_forecast 24, wind_onshore_forecast 192, actual_load 0
+hourly       SE_3   rows 65519  steps ['0 days 01:00:00']  last 2026-06-22 21:00:00+00:00  empty: price 0, load_forecast 24, wind_onshore_forecast 192, actual_load 0
+hourly       SE_4   rows 65519  steps ['0 days 01:00:00']  last 2026-06-22 21:00:00+00:00  empty: price 0, load_forecast 24, wind_onshore_forecast 192, actual_load 0
+quarter_hour DE_LU  rows 25440  steps ['0 days 00:15:00']  last 2026-06-22 21:45:00+00:00  empty: price 0, load_forecast 0, wind_onshore_forecast 4, wind_offshore_forecast 0, solar_forecast 4, actual_load 0
+quarter_hour FR     rows 25440  steps ['0 days 00:15:00']  last 2026-06-22 21:45:00+00:00  empty: price 0, load_forecast 0, wind_onshore_forecast 100, solar_forecast 100, actual_load 15
+quarter_hour ES     rows 25440  steps ['0 days 00:15:00']  last 2026-06-22 21:45:00+00:00  empty: price 0, load_forecast 0, wind_onshore_forecast 1248, solar_forecast 192, actual_load 1
+quarter_hour SE_1   rows 25440  steps ['0 days 00:15:00']  last 2026-06-22 21:45:00+00:00  empty: price 0, load_forecast 96, wind_onshore_forecast 384, actual_load 0
+quarter_hour SE_2   rows 25440  steps ['0 days 00:15:00']  last 2026-06-22 21:45:00+00:00  empty: price 0, load_forecast 96, wind_onshore_forecast 384, actual_load 0
+quarter_hour SE_3   rows 25440  steps ['0 days 00:15:00']  last 2026-06-22 21:45:00+00:00  empty: price 0, load_forecast 96, wind_onshore_forecast 384, actual_load 0
+quarter_hour SE_4   rows 25440  steps ['0 days 00:15:00']  last 2026-06-22 21:45:00+00:00  empty: price 0, load_forecast 96, wind_onshore_forecast 384, actual_load 0
+
+===== experiment H, all train days: 2018-12-31 23:00:00+00:00 to 2026-06-22 21:00:00+00:00 UTC, 65519 rows per zone =====
+
+1. correlation of the price with the price at the same wall-clock time k days before
+zone       D-1    D-2    D-3    D-4    D-5    D-6    D-7    D-8   D-14   D-21   D-28
+DE_LU    0.878  0.802  0.774  0.757  0.757  0.775  0.794  0.759  0.742  0.691  0.660
+FR       0.921  0.877  0.858  0.847  0.843  0.855  0.866  0.836  0.807  0.764  0.744
+ES       0.914  0.863  0.840  0.819  0.805  0.814  0.823  0.798  0.774  0.764  0.748
+SE_1     0.781  0.658  0.599  0.568  0.553  0.551  0.544  0.516  0.423  0.327  0.221
+SE_2     0.763  0.637  0.580  0.551  0.546  0.537  0.527  0.500  0.405  0.330  0.234
+SE_3     0.782  0.639  0.602  0.590  0.582  0.608  0.641  0.586  0.557  0.446  0.386
+SE_4     0.780  0.642  0.598  0.585  0.579  0.596  0.618  0.576  0.537  0.454  0.370
+
+2. R2 of the price on nested sets of day lags (same rows for every set of a zone)
+zone              D-1         D-1,2       D-1,2,3       D-1,2,7     D-1,2,3,7        D-1..7  D-1,2,3,7,14     D-1..7,14    rows
+DE_LU          0.7702        0.7746        0.7842        0.8032        0.8062        0.8085        0.8114        0.8129   65183
+FR             0.8482        0.8538        0.8591        0.8722        0.8734        0.8754        0.8750        0.8765   65183
+ES             0.8349        0.8395        0.8453        0.8546        0.8561        0.8575        0.8579        0.8590   65183
+SE_1           0.6096        0.6156        0.6226        0.6304        0.6335        0.6376        0.6347        0.6383   65183
+SE_2           0.5822        0.5894        0.5974        0.6040        0.6081        0.6139        0.6094        0.6145   65183
+SE_3           0.6117        0.6137        0.6311        0.6554        0.6621        0.6662        0.6662        0.6694   65183
+SE_4           0.6079        0.6108        0.6249        0.6447        0.6504        0.6551        0.6550        0.6584   65183
+
+3. D-1 summaries: correlation with the price, and R2 when added to D-1,2,3,7
+zone     corr mean D-1   corr min D-1   corr max D-1  corr last D-1   R2 base   +mean  +min,max   +last  +all 4
+DE_LU            0.839          0.711          0.810          0.849    0.8062  0.8104    0.8113  0.8325  0.8378
+FR               0.910          0.852          0.842          0.907    0.8734  0.8792    0.8764  0.8875  0.8879
+ES               0.876          0.803          0.842          0.871    0.8561  0.8594    0.8619  0.8683  0.8721
+SE_1             0.795          0.756          0.714          0.829    0.6335  0.6594    0.6572  0.7109  0.7126
+SE_2             0.782          0.744          0.696          0.816    0.6081  0.6376    0.6356  0.6889  0.6897
+SE_3             0.718          0.544          0.676          0.672    0.6621  0.6690    0.6693  0.6916  0.6971
+SE_4             0.726          0.547          0.685          0.678    0.6504  0.6596    0.6606  0.6872  0.6893
+
+4. inputs: R2 when added to the price lags D-1,2,3,7 (rows where every input has a value)
+   fc = load forecast, total wind forecast and, where the zone has one, solar forecast, at the target time
+   fc lags = the same forecasts at D-1 and D-7. load D-2, D-7 = actual load at the same wall-clock time
+zone    solar  R2 lags  +load fc  +wind fc     +fc  +fc,fc lags  +fc,load D-2  +fc,load D-2,D-7  corr(load fc, load D-2)    rows
+DE_LU     yes   0.8060    0.8102    0.8378  0.8545       0.8951        0.8617            0.8628                    0.579   65030
+FR        yes   0.8735    0.8755    0.8823  0.8868       0.9058        0.8976            0.8989                    0.862   63776
+ES        yes   0.8573    0.8600    0.8774  0.8836       0.9176        0.8906            0.8914                    0.659   63881
+SE_1       no   0.6334    0.6360    0.6589  0.6682       0.6844        0.6687            0.6688                    0.786   64559
+SE_2       no   0.6075    0.6107    0.6534  0.6628       0.6898        0.6651            0.6660                    0.769   64559
+SE_3       no   0.6584    0.6638    0.6937  0.7057       0.7394        0.7195            0.7222                    0.893   64559
+SE_4       no   0.6437    0.6478    0.6810  0.6904       0.7269        0.7050            0.7065                    0.849   64559
+
+===== experiment H, last 364 train days: 2025-06-23 21:00:00+00:00 to 2026-06-22 21:00:00+00:00 UTC, 8737 rows per zone =====
+
+1. correlation of the price with the price at the same wall-clock time k days before
+zone       D-1    D-2    D-3    D-4    D-5    D-6    D-7    D-8   D-14   D-21   D-28
+DE_LU    0.661  0.502  0.441  0.429  0.450  0.482  0.503  0.476  0.483  0.479  0.401
+FR       0.712  0.561  0.494  0.452  0.476  0.478  0.468  0.414  0.401  0.394  0.260
+ES       0.829  0.723  0.669  0.640  0.619  0.630  0.646  0.602  0.599  0.510  0.457
+SE_1     0.716  0.526  0.489  0.475  0.456  0.436  0.412  0.392  0.390  0.334  0.172
+SE_2     0.702  0.513  0.486  0.468  0.449  0.429  0.403  0.388  0.388  0.322  0.166
+SE_3     0.674  0.451  0.388  0.380  0.392  0.433  0.470  0.417  0.450  0.358  0.303
+SE_4     0.652  0.446  0.375  0.366  0.382  0.427  0.477  0.424  0.447  0.391  0.323
+
+2. R2 of the price on nested sets of day lags (same rows for every set of a zone)
+zone              D-1         D-1,2       D-1,2,3       D-1,2,7     D-1,2,3,7        D-1..7  D-1,2,3,7,14     D-1..7,14    rows
+DE_LU          0.4356        0.4440        0.4529        0.4838        0.4876        0.5000        0.5083        0.5163    8401
+FR             0.5039        0.5106        0.5183        0.5283        0.5329        0.5450        0.5390        0.5499    8401
+ES             0.6831        0.6872        0.6932        0.7098        0.7113        0.7134        0.7160        0.7176    8401
+SE_1           0.5043        0.5046        0.5265        0.5166        0.5323        0.5384        0.5438        0.5478    8401
+SE_2           0.4854        0.4862        0.5111        0.4982        0.5166        0.5227        0.5277        0.5317    8401
+SE_3           0.4450        0.4450        0.4584        0.4867        0.4931        0.5000        0.5125        0.5167    8401
+SE_4           0.4177        0.4184        0.4269        0.4676        0.4709        0.4783        0.4884        0.4928    8401
+
+3. D-1 summaries: correlation with the price, and R2 when added to D-1,2,3,7
+zone     corr mean D-1   corr min D-1   corr max D-1  corr last D-1   R2 base   +mean  +min,max   +last  +all 4
+DE_LU            0.309          0.192          0.212          0.293    0.4876  0.4880    0.4905  0.5180  0.5283
+FR               0.511          0.328          0.438          0.443    0.5329  0.5361    0.5448  0.5653  0.5671
+ES               0.521          0.387          0.463          0.504    0.7113  0.7121    0.7207  0.7242  0.7420
+SE_1             0.718          0.706          0.648          0.804    0.5323  0.5539    0.5614  0.6582  0.6766
+SE_2             0.709          0.707          0.623          0.799    0.5166  0.5396    0.5544  0.6498  0.6690
+SE_3             0.578          0.548          0.488          0.636    0.4931  0.4987    0.5001  0.5580  0.5728
+SE_4             0.501          0.433          0.420          0.534    0.4709  0.4743    0.4748  0.5218  0.5356
+
+4. inputs: R2 when added to the price lags D-1,2,3,7 (rows where every input has a value)
+   fc = load forecast, total wind forecast and, where the zone has one, solar forecast, at the target time
+   fc lags = the same forecasts at D-1 and D-7. load D-2, D-7 = actual load at the same wall-clock time
+zone    solar  R2 lags  +load fc  +wind fc     +fc  +fc,fc lags  +fc,load D-2  +fc,load D-2,D-7  corr(load fc, load D-2)    rows
+DE_LU     yes   0.4874    0.4999    0.5884  0.7612       0.7965        0.7703            0.7720                    0.616    8398
+FR        yes   0.5342    0.5513    0.5946  0.6906       0.7432        0.7226            0.7234                    0.870    8316
+ES        yes   0.7000    0.7063    0.7594  0.8475       0.8792        0.8529            0.8550                    0.636    7656
+SE_1       no   0.5410    0.5550    0.5990  0.6277       0.6527        0.6292            0.6301                    0.744    8065
+SE_2       no   0.5242    0.5508    0.6383  0.6949       0.7343        0.6954            0.6963                    0.641    8065
+SE_3       no   0.4971    0.5263    0.5974  0.6521       0.6839        0.6774            0.6774                    0.901    8065
+SE_4       no   0.4734    0.4917    0.5572  0.6074       0.6645        0.6291            0.6292                    0.852    8065
+
+===== experiment Q, all train days: 2025-09-30 22:00:00+00:00 to 2026-06-22 21:45:00+00:00 UTC, 25440 rows per zone =====
+
+1. correlation of the price with the price at the same wall-clock time k days before
+zone       D-1    D-2    D-3    D-4    D-5    D-6    D-7    D-8   D-14   D-21   D-28
+DE_LU    0.644  0.490  0.418  0.405  0.443  0.474  0.480  0.450  0.450  0.460  0.375
+FR       0.691  0.551  0.489  0.442  0.468  0.459  0.438  0.382  0.361  0.367  0.227
+ES       0.825  0.724  0.672  0.631  0.598  0.595  0.605  0.568  0.566  0.449  0.373
+SE_1     0.697  0.498  0.474  0.458  0.434  0.405  0.380  0.353  0.371  0.293  0.091
+SE_2     0.685  0.490  0.477  0.457  0.431  0.402  0.373  0.355  0.364  0.284  0.085
+SE_3     0.635  0.402  0.346  0.340  0.345  0.376  0.417  0.365  0.415  0.321  0.238
+SE_4     0.615  0.401  0.329  0.314  0.337  0.372  0.425  0.380  0.414  0.372  0.293
+
+2. R2 of the price on nested sets of day lags (same rows for every set of a zone)
+zone              D-1         D-1,2       D-1,2,3       D-1,2,7     D-1,2,3,7        D-1..7  D-1,2,3,7,14     D-1..7,14    rows
+DE_LU          0.4136        0.4296        0.4378        0.4612        0.4654        0.4807        0.4848        0.4956   24096
+FR             0.4763        0.4887        0.4975        0.5013        0.5072        0.5198        0.5133        0.5249   24096
+ES             0.6874        0.6938        0.6986        0.7086        0.7099        0.7107        0.7148        0.7156   24096
+SE_1           0.4731        0.4733        0.5014        0.4844        0.5060        0.5114        0.5229        0.5260   24096
+SE_2           0.4553        0.4559        0.4872        0.4666        0.4910        0.4967        0.5062        0.5096   24096
+SE_3           0.4191        0.4198        0.4379        0.4524        0.4631        0.4677        0.4843        0.4869   24096
+SE_4           0.3883        0.3908        0.4011        0.4303        0.4356        0.4411        0.4537        0.4568   24096
+
+3. D-1 summaries: correlation with the price, and R2 when added to D-1,2,3,7
+zone     corr mean D-1   corr min D-1   corr max D-1  corr last D-1   R2 base   +mean  +min,max   +last  +all 4
+DE_LU            0.308          0.191          0.198          0.301    0.4654  0.4658    0.4673  0.4956  0.5051
+FR               0.513          0.318          0.363          0.459    0.5072  0.5120    0.5108  0.5511  0.5535
+ES               0.558          0.427          0.463          0.534    0.7099  0.7112    0.7162  0.7253  0.7433
+SE_1             0.694          0.677          0.616          0.794    0.5060  0.5255    0.5415  0.6441  0.6720
+SE_2             0.686          0.685          0.590          0.787    0.4910  0.5113    0.5352  0.6325  0.6594
+SE_3             0.533          0.521          0.402          0.618    0.4631  0.4703    0.4808  0.5446  0.5640
+SE_4             0.460          0.415          0.346          0.505    0.4356  0.4404    0.4437  0.4893  0.5073
+
+4. inputs: R2 when added to the price lags D-1,2,3,7 (rows where every input has a value)
+   fc = load forecast, total wind forecast and, where the zone has one, solar forecast, at the target time
+   fc lags = the same forecasts at D-1 and D-7. load D-2, D-7 = actual load at the same wall-clock time
+zone    solar  R2 lags  +load fc  +wind fc     +fc  +fc,fc lags  +fc,load D-2  +fc,load D-2,D-7  corr(load fc, load D-2)    rows
+DE_LU     yes   0.4650    0.4779    0.5673  0.7348       0.7754        0.7488            0.7519                    0.614   24084
+FR        yes   0.5090    0.5305    0.5681  0.6688       0.7158        0.6986            0.6992                    0.860   23766
+ES        yes   0.6973    0.7024    0.7588  0.8365       0.8704        0.8424            0.8450                    0.661   21119
+SE_1       no   0.5136    0.5259    0.6009  0.6212       0.6429        0.6228            0.6245                    0.721   22752
+SE_2       no   0.4973    0.5221    0.6594  0.6975       0.7336        0.6981            0.6989                    0.582   22752
+SE_3       no   0.4661    0.4993    0.5859  0.6353       0.6652        0.6654            0.6656                    0.875   22752
+SE_4       no   0.4360    0.4579    0.5229  0.5752       0.6291        0.5959            0.5959                    0.819   22752
+```
+
+What it shows:
+
+- D-1 is the strongest lag in every zone. D-7 rises again above D-4 to D-6 in DE_LU, FR, ES, SE_3 and SE_4. In SE_1 and SE_2 it does not.
+- The lags D-1, 2, 3 and 7 reach an R2 within 0.001 to 0.006 of all seven lags on the hourly table, and within 0.002 to 0.012 on its last 364 days.
+- The last price of D-1 adds the most of the four statistics: 0.012 to 0.081 on the hourly table. It matters most in SE_1 and SE_2, the zones with the weakest daily season.
+- The forecasts at the target time add more on the recent days than on all train days. The forecasts of D-1 and D-7 add 0.016 to 0.041 on top.
+
+Actual load at D-2 on top of the forecasts and their lags:
+
+```
+H, all train days: R2 on price lags D-1,2,3,7 plus
+zone     fc + fc lags  + load D-2  + load D-2, D-7    rows
+DE_LU          0.8951      0.8953           0.8957   65198
+FR             0.9058      0.9065           0.9065   63944
+ES             0.9175      0.9176           0.9176   64049
+SE_1           0.6844      0.6845           0.6845   64727
+SE_2           0.6898      0.6902           0.6902   64727
+SE_3           0.7393      0.7402           0.7402   64727
+SE_4           0.7268      0.7290           0.7290   64727
+
+H, last 364 train days: R2 on price lags D-1,2,3,7 plus
+zone     fc + fc lags  + load D-2  + load D-2, D-7    rows
+DE_LU          0.7930      0.7958           0.7960    8566
+FR             0.7441      0.7473           0.7476    8484
+ES             0.8804      0.8805           0.8805    7824
+SE_1           0.6556      0.6565           0.6582    8233
+SE_2           0.7351      0.7354           0.7363    8233
+SE_3           0.6862      0.6967           0.6971    8233
+SE_4           0.6679      0.6748           0.6748    8233
+
+Q, all train days: R2 on price lags D-1,2,3,7 plus
+zone     fc + fc lags  + load D-2  + load D-2, D-7    rows
+DE_LU          0.7722      0.7753           0.7757   24756
+FR             0.7164      0.7197           0.7199   24438
+ES             0.8713      0.8713           0.8713   21791
+SE_1           0.6477      0.6486           0.6507   23424
+SE_2           0.7369      0.7374           0.7384   23424
+SE_3           0.6569      0.6714           0.6721   23424
+SE_4           0.6272      0.6364           0.6364   23424
+```
+
+- Actual load adds 0.0001 to 0.002 on all train days of the hourly table and about 0.01 at most on its last 364 days, in SE_3. It is built as a group of its own, so the validation days can decide (entry 73).
+
+### 3. Frame shape and weather, measured on train days
+
+A least-squares stand-in for the model, since no LightGBM model is trained yet. It is fitted on the first 80% of the train days and scored on the last 20% of the train days. "per time" is one fit per time of day: 24 on the hourly table and 96 on the 15-minute table. "profile" is the 24 hourly prices of D-1.
+
+```
+===== experiment H: frame shape =====
+MAE on the last 20% of the train days, EUR/MWh
+       fit days  score days  fit rows per time  naive  pooled  pooled + profile  per time  per time + profile
+DE_LU      2167         542               2166  34.05   14.58             14.98     14.17               14.50
+FR         2137         535               2123  33.55   15.21             16.07     15.93               16.77
+ES         2132         533               2131  29.13   12.74             13.30     12.88               13.46
+SE_1       2151         538               2151  25.65   13.44             13.65     12.94               13.26
+SE_2       2151         538               2151  26.18   12.92             13.16     12.28               12.55
+SE_3       2151         538               2151  34.56   19.17             18.75     19.16               18.98
+SE_4       2151         538               2151  38.84   20.98             21.04     20.24               20.23
+the same as relative MAE against the D-7 price
+       pooled  pooled + profile  per time  per time + profile
+DE_LU  0.4284            0.4400    0.4163              0.4258
+FR     0.4534            0.4788    0.4748              0.4999
+ES     0.4375            0.4565    0.4422              0.4623
+SE_1   0.5240            0.5323    0.5045              0.5169
+SE_2   0.4934            0.5026    0.4690              0.4796
+SE_3   0.5548            0.5427    0.5543              0.5491
+SE_4   0.5402            0.5415    0.5211              0.5207
+mean   0.4902            0.4992    0.4832              0.4935
+
+===== experiment Q: frame shape =====
+MAE on the last 20% of the train days, EUR/MWh
+       fit days  score days  fit rows per time  naive  pooled  pooled + profile  per time  per time + profile
+DE_LU       205          52                204  36.35   16.44             20.20     41.51               51.57
+FR          203          51                202  42.82   18.87             19.98   1651.34             1455.08
+ES          181          46                181  19.73   13.60             14.31     14.27               16.55
+SE_1        194          49                194  44.21   20.59             19.19     20.80               21.05
+SE_2        194          49                194  44.27   20.01             19.48     18.77               20.30
+SE_3        194          49                194  37.00   19.92             19.20     20.78               20.80
+SE_4        194          49                194  39.49   23.42             25.52     22.57               24.83
+the same as relative MAE against the D-7 price
+       pooled  pooled + profile  per time  per time + profile
+DE_LU  0.4523            0.5558    1.1421              1.4190
+FR     0.4406            0.4667   38.5641             33.9810
+ES     0.6897            0.7257    0.7233              0.8388
+SE_1   0.4657            0.4340    0.4706              0.4760
+SE_2   0.4519            0.4401    0.4240              0.4586
+SE_3   0.5384            0.5188    0.5615              0.5622
+SE_4   0.5930            0.6462    0.5717              0.6287
+mean   0.5188            0.5410    6.0653              5.4806
+
+
+########## weather, train days from 2024-03-15 ##########
+
+===== experiment H with weather: temperature, wind at 10 m and 100 m, radiation =====
+MAE on the last 20% of the train days, EUR/MWh
+       fit days  score days  fit rows per time  naive  pooled  pooled + weather  per time  per time + weather
+DE_LU       661         166                660  35.85   14.98             15.16     14.24               14.35
+FR          659         165                658  39.30   17.36             17.04     17.25               16.92
+ES          624         156                623  26.07   13.49             13.48     13.05               12.96
+SE_1        648         162                648  37.50   18.23             18.17     17.64               17.62
+SE_2        648         162                648  37.54   15.93             16.09     15.57               15.65
+SE_3        648         162                648  34.68   16.42             16.06     15.48               15.70
+SE_4        648         162                648  37.99   20.49             19.84     18.58               18.40
+the same as relative MAE against the D-7 price
+       pooled  pooled + weather  per time  per time + weather
+DE_LU  0.4179            0.4230    0.3973              0.4004
+FR     0.4417            0.4337    0.4391              0.4305
+ES     0.5174            0.5170    0.5004              0.4971
+SE_1   0.4861            0.4844    0.4703              0.4698
+SE_2   0.4243            0.4287    0.4146              0.4168
+SE_3   0.4735            0.4630    0.4463              0.4527
+SE_4   0.5395            0.5222    0.4891              0.4844
+mean   0.4715            0.4674    0.4510              0.4503
+
+shortwave_radiation stamped 00:00 market time, the mean of the hour 23:00 to 24:00, W/m2
+       hours  above 0  mean  max  mean of all hours
+DE_LU  830.0      0.0  0.00  0.0             147.08
+FR     830.0      0.0  0.00  0.0             152.69
+ES     830.0      0.0  0.00  0.0             206.83
+SE_1   830.0     28.0  0.03  1.0             115.41
+SE_2   830.0      0.0  0.00  0.0             124.08
+SE_3   830.0      0.0  0.00  0.0             130.63
+SE_4   830.0      0.0  0.00  0.0             141.91
+```
+
+What it shows:
+
+- On the hourly table a fit per hour is ahead by 0.007 in the mean. It is better in five zones and worse in FR and ES.
+- On the 15-minute table a fit per time of day breaks: each fit has about 200 rows.
+- The hourly prices of D-1 make the mean worse in both experiments, so they are not features.
+- The four weather values move the mean by 0.004 for one fit and by 0.001 for a fit per hour. They help in FR, SE_3 and SE_4 and hurt slightly in DE_LU and SE_2.
+- The radiation of the hour 23:00 to 24:00 is 0 on every train day in six zones, and at most 1.0 W/m2 in SE_1.
+- Limit: a least-squares fit is not LightGBM. A tree model on one frame can learn a different behaviour per hour. These relative MAE values are on train days and are not results of a model of this project.
+
+### 4. The built frames
+
+`python -m epf.features.build` on 26 Nov 2026. The command took 230 seconds.
+
+| Experiment | Rows per zone | Delivery days | Features | Seconds per zone |
+|---|---|---|---|---|
+| H | 69120 | 2880 | 28 | 24.8 to 31.2 |
+| Q | 39844 | 415 | 29 | 3.6 to 4.5 |
+
+Empty cells per feature and zone, experiment H, counted on the saved frames. SE_1 to SE_4 were added after Milestone 1, which approved DE_LU, FR and ES only.
+
+| Feature | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 |
+|---|---|---|---|---|---|---|---|
+| `price_lag_1` | 24 | 24 | 24 | 24 | 24 | 24 | 24 |
+| `price_lag_2` | 48 | 48 | 48 | 48 | 48 | 48 | 48 |
+| `price_lag_3` | 72 | 72 | 72 | 72 | 72 | 72 | 72 |
+| `price_lag_4` | 96 | 96 | 96 | 96 | 96 | 96 | 96 |
+| `price_lag_5` | 120 | 120 | 120 | 120 | 120 | 120 | 120 |
+| `price_lag_6` | 144 | 144 | 144 | 144 | 144 | 144 | 144 |
+| `price_lag_7` | 168 | 168 | 168 | 168 | 168 | 168 | 168 |
+| `price_d1_mean` | 24 | 24 | 24 | 24 | 24 | 24 | 24 |
+| `price_d1_min` | 24 | 24 | 24 | 24 | 24 | 24 | 24 |
+| `price_d1_max` | 24 | 24 | 24 | 24 | 24 | 24 | 24 |
+| `price_d1_last` | 24 | 24 | 24 | 24 | 24 | 24 | 24 |
+| `hour` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `weekday` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `holiday` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `load_forecast` | 50 | 0 | 1 | 24 | 24 | 24 | 24 |
+| `load_forecast_lag_1` | 74 | 24 | 24 | 48 | 48 | 48 | 48 |
+| `load_forecast_lag_7` | 218 | 168 | 168 | 192 | 192 | 192 | 192 |
+| `wind_forecast` | 3 | 351 | 553 | 216 | 216 | 216 | 216 |
+| `wind_forecast_lag_1` | 27 | 375 | 576 | 240 | 240 | 240 | 240 |
+| `wind_forecast_lag_7` | 171 | 519 | 720 | 384 | 384 | 384 | 384 |
+| `solar_forecast` | 3 | 377 | 337 | 69120 | 69120 | 69120 | 69120 |
+| `solar_forecast_lag_1` | 27 | 401 | 360 | 69120 | 69120 | 69120 | 69120 |
+| `solar_forecast_lag_7` | 171 | 542 | 504 | 69120 | 69120 | 69120 | 69120 |
+| `actual_load_lag_2` | 48 | 96 | 87 | 48 | 48 | 48 | 48 |
+| `temperature_2m` | 45624 | 45624 | 45624 | 45624 | 45624 | 45624 | 45624 |
+| `wind_speed_10m` | 45624 | 45624 | 45624 | 45624 | 45624 | 45624 | 45624 |
+| `wind_speed_100m` | 45600 | 45600 | 45600 | 45600 | 45600 | 45600 | 45600 |
+| `shortwave_radiation` | 46580 | 46580 | 46580 | 46580 | 46580 | 46580 | 46580 |
+
+Empty cells per feature and zone, experiment Q:
+
+| Feature | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 |
+|---|---|---|---|---|---|---|---|
+| `price_lag_1` | 96 | 96 | 96 | 96 | 96 | 96 | 96 |
+| `price_lag_2` | 192 | 192 | 192 | 192 | 192 | 192 | 192 |
+| `price_lag_3` | 288 | 288 | 288 | 288 | 288 | 288 | 288 |
+| `price_lag_4` | 384 | 384 | 384 | 384 | 384 | 384 | 384 |
+| `price_lag_5` | 480 | 480 | 480 | 480 | 480 | 480 | 480 |
+| `price_lag_6` | 576 | 576 | 576 | 576 | 576 | 576 | 576 |
+| `price_lag_7` | 672 | 672 | 672 | 672 | 672 | 672 | 672 |
+| `price_d1_mean` | 96 | 96 | 96 | 96 | 96 | 96 | 96 |
+| `price_d1_min` | 96 | 96 | 96 | 96 | 96 | 96 | 96 |
+| `price_d1_max` | 96 | 96 | 96 | 96 | 96 | 96 | 96 |
+| `price_d1_last` | 96 | 96 | 96 | 96 | 96 | 96 | 96 |
+| `hour` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `quarter_hour` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `weekday` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `holiday` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `load_forecast` | 0 | 0 | 0 | 96 | 96 | 96 | 96 |
+| `load_forecast_lag_1` | 96 | 96 | 96 | 192 | 192 | 192 | 192 |
+| `load_forecast_lag_7` | 672 | 672 | 672 | 768 | 768 | 768 | 768 |
+| `wind_forecast` | 4 | 104 | 1920 | 480 | 480 | 480 | 480 |
+| `wind_forecast_lag_1` | 100 | 200 | 2016 | 576 | 576 | 576 | 576 |
+| `wind_forecast_lag_7` | 676 | 776 | 2592 | 1152 | 1152 | 1152 | 1152 |
+| `solar_forecast` | 4 | 104 | 864 | 39844 | 39844 | 39844 | 39844 |
+| `solar_forecast_lag_1` | 100 | 200 | 960 | 39844 | 39844 | 39844 | 39844 |
+| `solar_forecast_lag_7` | 676 | 776 | 1536 | 39844 | 39844 | 39844 | 39844 |
+| `actual_load_lag_2` | 192 | 207 | 193 | 192 | 192 | 192 | 192 |
+| `temperature_2m` | 96 | 96 | 96 | 96 | 96 | 96 | 96 |
+| `wind_speed_10m` | 96 | 96 | 96 | 96 | 96 | 96 | 96 |
+| `wind_speed_100m` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `shortwave_radiation` | 1660 | 1660 | 1660 | 1660 | 1660 | 1660 | 1660 |
+
+Where the empty cells come from:
+
+- A price lag of k days is empty on the first k days of a table: 24 hours or 96 quarter-hours per day.
+- A forecast feature is empty where the processed table has a gap (DATA_NOTES, "Gaps that stay empty"), and its lags are empty one day and seven days later.
+- The solar features of SE_1 to SE_4 are empty in every row.
+- On the hourly frame the weather features are empty on the 45600 hours before 2024-03-15. `temperature_2m` and `wind_speed_10m` are also empty on the 24 hours of 2026-06-24. `shortwave_radiation` is also empty in the last hour of each of the 980 days with weather.
+- The frames cover the validation and the test days too. Only counts were read there.
+
+### 5. Checks
+
+- Tests: 627 pass. 129 of them are new: 16 for the weather cut, 9 for the weather in the backtest, 97 for the builder and 7 for the command.
+- Every cell of the 14 saved frames was compared with a plain pandas computation on the whole table, which does not call the builder and does not go through `day_inputs`: 21635852 cells, 0 different, 0 empty in one of the two only. The largest difference is 1.1e-13.
+- Each frame stands on exactly the time steps of its table, has no repeated timestamp and no infinite value, and ends with the last time step of 2026-11-19.
+- The empty cells of the features at the target time equal what `config/approved_gaps.yaml` gives: 98 comparisons of zone, experiment and feature, 0 not equal.
+- Value ranges on train days: 12 range rules on 14 frames, none broken. Hours are 0 to 23, quarter-hours 0 to 3, weekdays 0 to 6, and no load, wind, solar, wind speed or radiation value is below zero. Every price lag lies inside the price range of the train days.
+- One thing stands out on train days: the actual load of SE_1 reaches 4428 MW where its load forecast never exceeds 2204, and that of SE_2 reaches 8477 against 3608. The values stay as they are.
+
+Each cut was moved on purpose once, the tests were run, and the code was put back. "Tests" are the 237 tests of the six files that touch the cuts.
+
+| Change | Failed tests | Of them feature tests |
+|---|---|---|
+| Price cut: end of D-1 to end of D | 54 | 30 |
+| Day-ahead cut: end of D to end of D+1 | 18 | 2 |
+| Actual load cut: end of D-2 to end of D-1 | 19 | 3 |
+| Weather run cut: run of D-1 to run of D | 4 | 1 |
+| Weather time cut: end of D to end of D+1 | 1 | 0 |
+| Builder: every lag one day too short | 46 | 46 |
+| Builder: radiation not moved by one hour | 3 | 3 |
+| Builder: an empty wind column skipped in the sum | 2 | 2 |
+| Builder: a zone name in the code | 1 | 1 |
+
+- The weather time cut fails one test only. In a table like the real one the hours of D+1 come from the run of D, so the run cut removes them as well.
+
+### 6. Limits
+
+- No model has been trained. The evidence is linear and partly fitted and scored on the same rows.
+- The features were not chosen on validation days. Which groups LightGBM uses is decided there.
+- One feature list serves all seven zones. The weekly lag is weak in SE_1 and SE_2, and the Swedish zones have no solar feature.
+- The French wind feature is onshore only, because the offshore forecast was dropped by the coverage gate (entry 32).
+- 7 of the 90 ES test days, 6 to 12 November 2026, have no wind and no solar forecast, so those features are empty there.
+- Weather has 830 train days, one point per zone, and a publication time taken from the Open-Meteo docs.
+- The build takes about 28 seconds per zone on the hourly table. A model that builds its training rows at every weekly fit pays this each time.
+
+### 7. How to run it again
+
+```
+.venv\Scripts\python -m epf.data.build_dataset
+.venv\Scripts\python -m epf.features.build
+```
+
+- The second command prints the rows and the empty cells per feature and zone and writes `data/features/{experiment}/{ZONE}.parquet`, which git ignores.
+- The evidence of sections 2 and 3, the cell comparison and the moved cuts were made with scripts outside the repo. Their printed output is in this file.

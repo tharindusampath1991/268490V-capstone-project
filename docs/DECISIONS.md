@@ -509,3 +509,94 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Reason: Before this file the measurements were spread over DECISIONS entries 62 to 67, README and the results files, and some existed only in the output of the session: the season tables, the timing before the runs, MAE and RMSE per setting, the peak memory and the time of each command. DATA_NOTES does the same job for the data.
 - Alternative rejected: Putting everything into DECISIONS entry 64. That file holds decisions with their reasons, and an entry with ten tables would bury them.
 - Limits: The scripts that made the season evidence, the timing and the checks are not in the repo, so those blocks cannot be rebuilt by a repo command. The file must be extended by hand when a model is added.
+
+## 69. The feature builder reads the cut inputs of one delivery day
+- Date: 2026-11-26, proposal approved by the owner
+- Decision: `src/epf/features/builder.py` has `day_features(inputs, settings, holidays)`, which reads one `DayInputs` object and nothing else, and `build_features(table, days, ...)`, which calls `day_inputs` of `cutoff.py` for every delivery day and joins the days. No cut is written a second time. `day_inputs` receives the longest lag of the settings, 7 days, as its history length. The frame holds features only. The price of the delivery day is never in it, and the caller sets the target beside it, as the backtest does with the actual prices. The settings are the new key `features` in the config.
+- Reason: CLAUDE.md asks that the leakage rule applies to every feature. With one path through `day_inputs` a wrong feature can read an old value, but it cannot read a value behind a cut.
+- Tests: Synthetic tables whose values are a code of their own timestamp, so a feature value says which timestamp it read. No feature reads a timestamp after its cut, on days of 23, 24 and 25 hours, hourly and 15-minute. Changing every value behind the cuts changes no feature, and changing the last value before a cut changes one. Each cut was moved on purpose once and restored: the price cut failed 54 tests, the day-ahead cut 18, the actual load cut 19, the weather run cut 4 and the weather time cut 1.
+- Check on the real tables: every cell of the 14 built frames, 21635852 in all, was compared with a plain pandas computation on the whole table that does not go through `day_inputs`. None differs.
+- Alternative rejected: Computing every feature on the whole table at once and blanking what lies behind a cut. It is much faster, but the cuts would then exist in a second place, and a wrong mask leaks without an error (the reason of entry 51).
+- Limits: The build takes 25 to 31 seconds per zone on the hourly table of 2880 days and about 4 seconds on the 15-minute table, 230 seconds for the whole command. A model that builds its training rows again at every weekly fit pays this each time. `builder.py` and `build.py` are files beyond the layout of the first plan.
+
+## 70. Price features: lags of 1 to 7 days and four statistics of D-1
+- Date: 2026-11-26, chosen by the owner
+- Decision: `features.price_lag_days` is 1 to 7: the price at the same wall-clock time on each of the seven days before D. `features.price_day_stats` is mean, min, max and last: statistics over every market time unit of D-1, repeated on the rows of D. That is eleven price features.
+- Evidence, train days only: D-1 is the strongest lag in every zone, with a correlation of 0.76 to 0.92 on the hourly table. D-7 rises again above D-4 to D-6 in DE_LU, FR, ES, SE_3 and SE_4, and not in SE_1 and SE_2. In a least-squares fit the R² of all seven lags is 0.001 to 0.006 above that of D-1, 2, 3 and 7, and 0.002 to 0.012 on the last 364 train days. The last price of D-1 adds 0.012 to 0.081, most in SE_1 and SE_2. The tables are in `docs/MODEL_NOTES.md`.
+- Reason: The owner chose all seven lags. A tree model can leave a weak lag unused, and the lags are a list in the config.
+- Alternatives rejected: D-1, 2, 3 and 7 with the same statistics, which I had recommended as the smaller set. The same with D-14, which adds 0.001 to 0.005. D-1 and D-7 alone, which gives up the last price of D-1.
+- Limits: R² comes from a linear fit on the days it was fitted on. It says what a line can use, not what a tree can use. The lags were not chosen on validation days. One list serves all zones, although the weekly lag is weak in SE_1 and SE_2.
+
+## 71. One feature list for all zones: total wind, and a solar feature that is empty in Sweden
+- Date: 2026-11-26, proposal approved by the owner
+- Decision: `features.forecasts` names each forecast feature and the day-ahead columns summed into it. `load_forecast` is the load forecast. `wind_forecast` is onshore plus offshore, where a zone uses the columns it has: both in DE_LU, onshore alone in the six other zones. `solar_forecast` is the solar forecast. A zone without any of the columns gets the feature with every value empty, so SE_1 to SE_4 have empty solar features. Every zone has the same columns in the same order. A sum is empty when one of its columns is empty at that time.
+- Reason: The rule is that no feature exists for one zone only (entry 59). Offshore wind exists in DE_LU alone, so it is never a feature of its own. The solar forecast exists in three zones, and entry 59 already says that Sweden enters with one input fewer. One column list lets one model setting read every zone.
+- Alternatives rejected: Only the columns that every zone has, which takes the solar forecast away from DE_LU, FR and ES. Onshore wind alone, which also drops the offshore wind of DE_LU.
+- Limits: FR has offshore wind since 2022, but its forecast column was dropped by the coverage gate (entry 32), so the French wind feature is onshore only. SE_4 has the most solar of the Swedish zones and no solar feature.
+
+## 72. Each forecast is given at the target time and at D-1 and D-7
+- Date: 2026-11-26, proposal approved by the owner
+- Decision: `features.forecast_lag_days` is 1 and 7. Each of the three forecast features comes at the target time and at the same wall-clock time one day and seven days before: nine forecast features.
+- Evidence, train days only: On top of the price lags and the forecasts at the target time, the forecasts of D-1 and D-7 raise R² by 0.016 to 0.041 on the hourly table and by 0.025 to 0.057 on its last 364 days.
+- Reason: The lagged price was set under the lagged forecast. With both, the model can see what has changed since then. All of these values lie under the day-ahead cut.
+- Alternative rejected: The forecast at the target time only, which is three features and gives up the measured gain.
+- Limit: Only the lags 1 and 7 were measured.
+
+## 73. Actual load at D-2 is its own feature group
+- Date: 2026-11-26, proposal approved by the owner
+- Decision: The group `actual_load` holds the columns under the D-2 cut at `features.actual_load_lag_days`, which is 2: one feature, `actual_load_lag_2`. A lag of one day is always empty, because the inputs hold actual load through D-2 only. A test asks for that lag and gets empty values.
+- Evidence, train days only: On top of the forecasts and their lags, actual load at D-2 raises R² by 0.0001 to 0.002 on the hourly table, and by about 0.01 at most on its last 364 days, in SE_3. D-7 adds at most 0.002 more.
+- Reason: PROJECT_CONTEXT §5 lists actual load through D-2 as known, and §6 does not name it for LightGBM. As a group of its own it can be switched off, so the validation days can decide. The builder now uses the D-2 cut, so a moved cut fails feature tests.
+- Alternative rejected: Leaving it out. The evidence is weak, but then no feature would exercise the D-2 cut.
+- Limit: On train days the actual load of SE_1 and SE_2 reaches values far outside their load forecast: up to 4428 MW against a forecast maximum of 2204 in SE_1, and 8477 against 3608 in SE_2. The values stay as they are (entry 30).
+
+## 74. Feature groups are switched in the config, one group per forecast
+- Date: 2026-11-26, chosen by the owner
+- Decision: `features.groups` lists the groups that are built: `price`, `calendar`, `load_forecast`, `wind_forecast`, `solar_forecast`, `actual_load` and `weather`. The builder makes only the listed groups, in a fixed order, and a group has the same values whatever else is built. An unknown group, an unknown statistic, a lag below one day, a forecast column that is not under the day-ahead cut and a wrong weather column are refused when the settings are read.
+- Reason: RQ2 asks whether the extra inputs help. With one group per forecast the comparison can also drop one forecast at a time. The choice sits in the config and not in model code.
+- Alternatives rejected: Four groups with the three forecasts as one, which I had recommended as fewer combinations to run. No switch in the builder, with the model dropping columns by name.
+- Limit: Seven groups give many combinations. Which of them are run is a choice for the LightGBM step, on validation days.
+
+## 75. One row per market time unit, built in memory, with a saved copy for inspection
+- Date: 2026-11-26, chosen by the owner after a second round of evidence
+- Decision: A feature frame has a UTC index and one row per market time unit: 24 rows a day on the hourly table and 96 on the 15-minute table, 23 or 25 and 92 or 100 on a clock-change day. The hour is a feature, and the 15-minute frame also has `quarter_hour`. The frame is built in memory from the cut inputs. `python -m epf.features.build` also saves `data/features/{experiment}/{ZONE}.parquet` (`paths.features`), which git ignores. The backtest never reads these files. The 24 hourly prices of D-1 are not features.
+- Evidence, train days only, a least-squares stand-in fitted on the first 80% of the train days and scored on the last 20%: one fit over all market time units has a mean relative MAE of 0.4902 on the hourly table and 0.5188 on the 15-minute table. One fit per time of day has 0.4832 and 6.0653. Each of its 96 fits on the 15-minute table has about 200 rows. The hourly prices of D-1 raise the error to 0.4992 and 0.5410.
+- Reason: The owner asked which shape gives the best forecasts with time left aside. This shape keeps both designs open: one model on the whole frame, or one model per hour by filtering the same frame on `hour`. It is the only shape that held on the 15-minute table. The owner chose the saved copy to look at the features.
+- Alternatives rejected: One row per delivery day with a column per hour, which fixes one model per time of day. The same frame without a saved copy, which I had recommended, because a saved file is a second path beside the cuts.
+- Limits: A least-squares fit is not LightGBM. A tree model on one frame can learn a different behaviour per hour by itself. The saved frames cover the validation and the test days too, so they are not train data as a whole. A saved frame holds the prices of those days as lags, like the processed tables do.
+
+## 76. A lag follows the wall clock, as the seasonal naive forecast does
+- Date: 2026-11-26, proposal approved by the owner
+- Decision: Every lag of prices, forecasts and actual load calls `source_times` of `src/epf/models/naive.py`: the same wall-clock time in market time some days before, and a whole number of 24 hours before the target where that time is missing or double (entry 52). So `price_lag_7` equals the seasonal naive forecast, and a test asserts it on seven days around both clock changes, hourly and 15-minute. The statistics of D-1 cover every market time unit of that calendar day: 23, 24 or 25 hours.
+- Reason: The daily price shape follows the local clock (entry 39). One rule for the naive forecast and for the features means the model and its reference read the same hour.
+- Alternative rejected: A fixed number of 24 hours in UTC. It needs no special case, but in the days after a clock change every lag would sit one local hour off.
+
+## 77. Calendar features, empty values and no scaling
+- Date: 2026-11-26
+- Decision: The calendar group has `hour` (0 to 23 in market time, hour 2 twice on a 25-hour day), `quarter_hour` (0 to 3, only where the market time unit is shorter than an hour), `weekday` (0 is Monday) and `holiday` (1 on a nationwide holiday of the country of the zone, entry 46). No month and no year. Nothing is filled: a feature is empty where its source value is empty, lies before the start of the table or behind a cut, or where the zone lacks the column. No row is dropped. The mean, minimum and maximum of D-1 are empty when one price of D-1 is empty. No feature is scaled.
+- Reason: A tree cannot extrapolate a year, and experiment Q has 265 train days, so a month would stand for a trend there. Entry 30 left the handling of gaps to the feature builder, and LightGBM reads an empty value as it is. Trees do not need scaling, and a scaler would have to be fitted on train days only.
+- Alternative rejected: Dropping the rows of the first seven days, whose lags reach before the table. The training step can do that. The builder reports the counts.
+- Check: The empty cells of the features at the target time equal what `config/approved_gaps.yaml` gives, in all 98 comparisons of zone, experiment and feature.
+
+## 78. Weather features are built now, with a fourth cut by run time and by time
+- Date: 2026-11-26, decided by the owner
+- Decision: `cutoff.py` has a `WeatherRule` and `DayInputs` has a part `weather`. A weather row is handed over when its time is before 00:00 market time on D+1 and its model run started at or before `open_meteo.run_hour_utc` (00:00 UTC) on D-1. The run column stays in the part, so the run of every value can be read. `backtest.weather_run_column` names it, and the weather columns are `open_meteo.variables`. A weather table with another column, or without the run column or a rule, is refused. The group `weather` of the builder has four features: `temperature_2m`, `wind_speed_10m`, `wind_speed_100m` and `shortwave_radiation`.
+- Reason: The owner chose to build weather on this day. PROJECT_CONTEXT §6 said "Weather later" and §10 placed it in weeks 9 to 11. Entry 25 stored the run time so that each value can be checked against the forecast origin, and this cut is that check.
+- Evidence, train days from 2024-03-15, the least-squares stand-in of entry 75: the four weather values move the mean relative MAE from 0.4715 to 0.4674 for one fit and from 0.4510 to 0.4503 for a fit per hour. They help in FR, SE_3 and SE_4 and hurt slightly in DE_LU and SE_2.
+- Alternatives rejected: Weather after M2, which I had recommended, because it widens the day and needs a change under `src/epf/evaluation/`. A cut by time only, which never reads the run column.
+- Limits: Weather exists from delivery day 2024-03-15, so the features are empty on 45600 of the 69120 hours of the hourly frame. In the real table both conditions cut the same rows, because the hours of D+1 come from the run of D. That the run of 00:00 UTC is published before gate closure is taken from the Open-Meteo docs and not measured (entry 26). One point stands for a zone (entry 27). The measured gain is small.
+
+## 79. Radiation is taken one hour later, and weather stands on the four quarter-hours of its hour
+- Date: 2026-11-26, proposal approved by the owner
+- Decision: `features.weather_hour_before` lists `shortwave_radiation`, whose value is the mean of the hour before its timestamp. The delivery hour that starts at t takes the value stamped t plus one hour. For the last hour of D that value lies behind the weather cut, so the feature is empty there: one hour per day on the hourly frame and four quarter-hours on the 15-minute frame. The other weather values are taken at the start of the hour. On the 15-minute frame an hourly value stands on the four quarter-hours of its hour.
+- Reason: This is the line-up that entry 33 left to the feature builder. The value for the hour 23:00 to 24:00 comes from the next model run, which is not known at the forecast origin.
+- Evidence, 830 train days: the radiation of that hour is 0 W/m² on every day in six zones. In SE_1 it is above 0 on 28 days, at most 1.0 W/m².
+- Alternatives rejected: Setting that hour to 0, which fills a value. No shift, which leaves radiation one hour late against the solar forecast and the price. Interpolating weather between two hours on the 15-minute grid, which needs the next hour and is more to defend than repeating a value (entry 22).
+
+## 80. The backtest hands the weather table to every model
+- Date: 2026-11-26, chosen by the owner
+- Decision: `backtest_zone` in `backtest.py` reads `weather/{ZONE}.parquet` for a zone with a weather point, cut at the end of the scored split like the price table, and `run_days` passes it to `day_inputs`. Every model receives the cut weather in `inputs.weather`, also the naive reference. A zone without a weather point gets an empty weather part. A validation run reads no weather row of the test days.
+- Reason: The owner chose to wire the backtest on the same day as the cut. The LightGBM model of the next step then finds the weather in its inputs, and the tests of the harness cover the weather cut as well.
+- Check: With the owner's yes, a backtest was run in memory on the validation days and wrote nothing: the naive forecast on experiments H and Q and `mstl_182` on experiment H, for all seven zones. In all 21 runs the forecasts equal the saved forecast files exactly, the MAE equals the saved row to the last digit, and every check passed. No file under `reports/results/` or `data/forecasts/` changed.
+- Alternative rejected: Changing `cutoff.py` only and wiring the backtest with the LightGBM model, which I had recommended, because it leaves the runs of the naive forecast and of `mstl_182` exactly as they were.
+- Limits: The naive forecast and the statistical models ignore the weather. Each day now costs one more cut, so `wall_seconds` of a later run is not strictly comparable with the saved rows. The cost was not isolated: in the check the day loops of `mstl_182` took 98 to 104 seconds per zone against 60 to 95 in the saved rows, while other commands ran on the same machine.
