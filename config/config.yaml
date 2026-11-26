@@ -89,6 +89,10 @@ backtest:
   # candidates under models it had the lowest mean relative MAE over the seven zones on the
   # validation days of experiment H. Never change it.
   statistical_baseline: mstl_182
+  # The LightGBM model, frozen on 2026-11-26. Of the 11 LightGBM candidates under models it
+  # had the lowest mean relative MAE over the seven zones on the validation days of
+  # experiment H. Never change it.
+  lightgbm_model: lgbm_load_826_slow
   # Models that may be scored on the test days. Every other model is refused there.
   # mstl_182 was added on 2026-11-25, after it was frozen and the owner said yes.
   test_models: [naive, mstl_182]
@@ -169,10 +173,8 @@ models:
   #                 of 0.1 and 31 leaves per tree.
   #   history_days  days before the delivery day that the model receives, as a moving
   #                 window. Without it the model receives every day before the delivery day.
-  # The weather table starts on 2024-03-15. 826 days are 118 weeks, so at the first fit the
-  # window of the two entries on 826 days lies inside the weather period.
-  # The last three entries are lgbm_load_826 with one change each. A quarter of the learning
-  # rate with four times the trees counts as one change.
+  # The weather table starts on 2024-03-15. 826 days are 118 weeks, and a window of 826 days
+  # lies inside the weather period at the first fit.
   lgbm_price: {family: lgbm, objective: regression, trees: 100, params: {},
                groups: [price, calendar]}
   lgbm_fcst: {family: lgbm, objective: regression, trees: 100, params: {},

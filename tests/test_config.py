@@ -180,7 +180,7 @@ def lgbm_entry(groups: list[str], history_days: int | None = None, objective: st
     return entry
 
 
-# The approved LightGBM candidates. The last three are lgbm_load_826 with one change each.
+# The approved LightGBM candidates.
 LGBM_CANDIDATES = {
     "lgbm_price": lgbm_entry(PRICE_GROUPS),
     "lgbm_fcst": lgbm_entry(FORECAST_GROUPS),
@@ -211,4 +211,14 @@ def test_project_config_names_a_frozen_statistical_baseline_that_is_a_model_entr
     name = config["backtest"]["statistical_baseline"]
 
     assert "family" in config["models"][name]
+    assert build_model(config, name).name == name
+
+
+def test_project_config_names_a_frozen_lightgbm_model_that_is_a_model_entry():
+    config = load_config()
+
+    name = config["backtest"]["lightgbm_model"]
+
+    assert name == "lgbm_load_826_slow"
+    assert config["models"][name]["family"] == "lgbm"
     assert build_model(config, name).name == name
