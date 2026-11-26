@@ -20,6 +20,9 @@ paths:
   # Forecasts per market time unit, with the actual prices beside them. Under data/, which
   # git ignores. The naive forecast is the ENTSO-E price of 7 days before. Never commit it.
   forecasts: data/forecasts
+  # Feature frames per zone and experiment, written by the features command for inspection.
+  # Under data/, which git ignores. The backtest never reads them.
+  features: data/features
   crosscheck_report: docs/price_crosscheck.md
   # Results for zones whose Energy-Charts data is for private and internal use only.
   # Under data/, which git ignores. Never commit this file.
