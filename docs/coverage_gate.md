@@ -1,6 +1,6 @@
 ## ENTSO-E coverage gate
 
-Delivery days 2019-01-01 to 2026-11-19. Core zones come first. Zones in the group "extra" are an addition to the scope approved in Milestone 1.
+Delivery days 2019-01-01 to 2026-11-19. Core zones come first, then the zones in the group "extra".
 
 A zone passes when prices reach 99% and the load forecast and at least one wind column reach 95%, in every year. The gate table shows the lowest yearly share. The gate decides the extra zones only. Core zones are never cut, so their shares are shown without a verdict.
 

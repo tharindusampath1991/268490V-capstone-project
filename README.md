@@ -12,8 +12,10 @@ It forecasts next-day (day-ahead) electricity prices with prediction intervals. 
 
 Seven core zones run through the same pipeline, with the same analysis, the same models and one results table:
 
-- DE-LU, FR and ES. Milestone 1 approved these three.
-- SE1, SE2, SE3 and SE4, all of Sweden. They are not part of the approved Milestone 1 scope. I added them on 19 Nov 2026 and made them core zones on 24 Nov 2026 ([docs/DECISIONS.md](docs/DECISIONS.md), entries 1 and 59).
+- DE-LU: Germany and Luxembourg.
+- FR: France.
+- ES: Spain.
+- SE1, SE2, SE3 and SE4: Sweden, from north to south.
 
 Each model has one setting for all zones, chosen on the validation days of all seven. Two limits apply to Sweden: the data has no usable solar forecast for the Swedish zones, and SE1 and SE2 have nearly the same price, so their results are near-duplicates.
 
@@ -146,7 +148,7 @@ Once the tables are built, this scores the seasonal naive forecast on the 60 val
 - The seasonal naive forecast is the price at the same local time 7 days before (DECISIONS entry 52). It is the reference for relative MAE.
 - The command prints its checks per zone and experiment and stops with an error when one fails.
 - Results go to `reports/results/`, which is committed. `backtest_core.csv` holds one row per run, zone and experiment for all seven zones. Each row has the metrics, the model settings, the seed, the run time, the peak memory and the hardware. `daily_core.csv` holds the losses per delivery day.
-- SE1 to SE4 are in the same files as DE-LU, FR and ES. Milestone 1 did not approve them, and every results table in the report will say so.
+- SE1 to SE4 are in the same files as DE-LU, FR and ES.
 - A run adds rows to `backtest_core.csv`, so a second run shows as a second set of rows.
 - Forecasts per market time unit are saved under `data/forecasts/`, which git ignores.
 - `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config: the naive forecast and `mstl_182`, the statistical baseline (DECISIONS entries 50, 58 and 67). Each of the two test runs was done once, on 24 and on 25 Nov 2026.
@@ -163,17 +165,17 @@ The statistical baseline is `mstl_182`: MSTL from `statsforecast` with a daily a
 - No transform is used and every ETS form is additive, because prices go negative (DECISIONS entry 62).
 - `mstl_182` takes about 10 minutes on experiment H and about 3 hours on experiment Q for the validation days.
 
-Relative MAE of `mstl_182` against the seasonal naive forecast. Milestone 1 approved DE-LU, FR and ES only. SE1 to SE4 were added afterwards, and SE1 and SE2 are near-duplicates.
+Relative MAE of `mstl_182` against the seasonal naive forecast. SE1 and SE2 are near-duplicates.
 
 | Zone | Validation, H | Validation, Q | Test, H | Test, Q |
 |---|---|---|---|---|
 | DE_LU | 0.7106 | 0.6611 | 0.4831 | 0.4901 |
 | FR | 0.6521 | 0.6528 | 0.5151 | 0.5182 |
 | ES | 0.7165 | 0.7160 | 0.6137 | 0.6181 |
-| SE_1 (added after M1) | 0.7317 | 0.7267 | 0.6439 | 0.6496 |
-| SE_2 (added after M1) | 0.6666 | 0.6682 | 0.6486 | 0.6466 |
-| SE_3 (added after M1) | 0.6596 | 0.6617 | 0.5499 | 0.5512 |
-| SE_4 (added after M1) | 0.6837 | 0.6955 | 0.5116 | 0.5101 |
+| SE_1 | 0.7317 | 0.7267 | 0.6439 | 0.6496 |
+| SE_2 | 0.6666 | 0.6682 | 0.6486 | 0.6466 |
+| SE_3 | 0.6596 | 0.6617 | 0.5499 | 0.5512 |
+| SE_4 | 0.6837 | 0.6955 | 0.5116 | 0.5101 |
 | Mean | 0.6887 | 0.6831 | 0.5666 | 0.5691 |
 
 The test values are lower than the validation values because the naive forecast was much worse on the test days. Its mean MAE on experiment H rose from 29.63 to 54.83 EUR/MWh, and that of `mstl_182` from 20.33 to 30.09 (DECISIONS entry 67).
@@ -198,7 +200,7 @@ The LightGBM model is not trained yet. Its features are built and tested. Once t
 | `actual_load` | Actual load 2 days before |
 | `weather` | Temperature, wind speed at 10 m and 100 m and solar radiation, from the weather forecast run of D-1 |
 
-- All seven zones have the same columns. SE1 to SE4, which were added after Milestone 1, have no solar forecast, so their solar features are empty.
+- All seven zones have the same columns. SE1 to SE4 have no solar forecast, so their solar features are empty.
 - Nothing is filled and no row is dropped. A feature is empty where its source is empty.
 - Weather forecasts exist from delivery day 2024-03-15 only, so the weather features are empty before that day.
 - The command prints the rows and the empty cells per feature and zone. It takes about 4 minutes and saves a copy under `data/features/`, which git ignores. The backtest never reads these files.

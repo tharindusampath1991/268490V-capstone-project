@@ -189,11 +189,7 @@ eda:
 #                    private and internal use only for ES, SE1, SE2 and SE3 (2026-11-20).
 #   group            core  = in every analysis, model run and results table. Never cut.
 #                    extra = runs after the core zones, in its own results files. No zone
-#                            has this group now.
-#                    Milestone 1 approved DE_LU, FR and ES only. SE_1 to SE_4 were added on
-#                    19 Nov 2026 (docs/DECISIONS.md, entry 1) and made core zones on
-#                    24 Nov 2026 by owner decision (entry 59). A group does not say what
-#                    Milestone 1 approved.
+#                            has this group.
 #   weather_point    the one place whose weather forecast stands for the zone
 #                    (docs/DECISIONS.md, entry 27). Degrees north and east.
 zones:

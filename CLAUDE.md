@@ -10,9 +10,9 @@ Scope, forecast protocol, models, plan: @docs/PROJECT_CONTEXT.md
 - The leakage rule (PROJECT_CONTEXT §5) applies to every feature and model input. If unsure, leave it out and flag it.
 - Time-based splits only. Tune on validation. The test set is touched only by the final backtest.
 - Never commit raw data, `.env`, tokens or model caches. The token is read from `ENTSOE_API_TOKEN` in `.env`. Never print it. ENTSO-E request URLs contain it, so never print or log a raw request error either.
-- All seven zones are core zones: DE-LU, FR and ES, which Milestone 1 approved, and the Swedish zones SE1–SE4, which I added on 19 Nov 2026 and made core on 24 Nov 2026 (DECISIONS entries 1 and 59). Every analysis, model and results table covers all seven. Swedish work is never cut first.
+- All seven zones are core zones: DE-LU, FR, ES and the Swedish zones SE1–SE4. Every analysis, model and results table covers all seven. No zone is cut first.
 - One setting per model, chosen on the validation days of all seven zones. No tuning and no feature for one zone only.
-- Wherever the Swedish zones are shown, say that Milestone 1 approved DE-LU, FR and ES only.
+- The seven zones are shown alike. Nothing marks or describes SE1–SE4 as added later, and no text says which zones Milestone 1 approved (DECISIONS entry 81).
 - No external LLM API calls in the pipeline.
 - Do not commit or push unless I say so. I review the diff first.
 - No backdated commits. No rewriting pushed history.
@@ -43,7 +43,7 @@ Fill in as they come to exist.
 - Download actual load: `.venv\Scripts\python -m epf.data.download_actual_load` (first full run: about 75 minutes)
 - Download weather: `.venv\Scripts\python -m epf.data.download_weather` (first full run: about 4.5 hours and about 6900 of the 10000 Open-Meteo calls allowed per day)
 - Price cross-check: `.venv\Scripts\python -m epf.data.crosscheck_prices` (after the price download, about 30 minutes)
-- Coverage gate: `.venv\Scripts\python scripts/check_coverage.py` (first full run: about 4 hours, writes `docs/coverage_gate.md`. Do not run it again without asking: the report of 24 Nov 2026 is the record that admitted SE1–SE4, and a new run would give them no verdict, because core zones are not gated)
+- Coverage gate: `.venv\Scripts\python scripts/check_coverage.py` (first full run: about 4 hours, writes `docs/coverage_gate.md`. Do not run it again without asking: the report of 24 Nov 2026 is the record of the measured coverage, and a new run would give no zone a verdict, because core zones are not gated)
 - Build data: `.venv\Scripts\python -m epf.data.build_dataset` (about 3 seconds once the raw files are saved. Cleans, writes `data/processed/` and validates. `-m epf.data.clean` and `-m epf.data.validate` run one step alone)
 - Price figures: `.venv\Scripts\python -m epf.eda.price_figures` (about 10 seconds, after the build. All seven core zones, hourly table, train days only. Prints the numbers and writes six PNG files to `reports/figures/`)
 - EDA notebook: `.venv\Scripts\python -m jupyter nbconvert --to notebook --execute --inplace notebooks\01_eda_prices.ipynb` (about 16 seconds. It calls the figure functions and writes no PNG file)

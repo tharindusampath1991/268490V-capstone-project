@@ -7,8 +7,8 @@ For each zone and year the gate measures how much of the expected data exists:
 
 A zone passes when, in every year, prices reach price_min_share and the load
 forecast and at least one wind column reach forecast_min_share. Solar does not
-decide the gate. The gate decides the extra zones only. Core zones were
-approved in Milestone 1 and are never cut, so they are measured but not gated.
+decide the gate. The gate decides the extra zones only. Core zones are never
+cut, so they are measured but not gated.
 
 A forecast column below forecast_min_share in any year is marked "drop" for
 that zone, unless the config lists it under keep_columns. Such a column is
@@ -203,8 +203,8 @@ def build_report(coverage: pd.DataFrame, verdict: pd.DataFrame, decisions: pd.Da
 
     return "\n\n".join([
         "## ENTSO-E coverage gate\n\n"
-        f"Delivery days {start.date()} to {last_day}. Core zones come first. Zones in the group "
-        "\"extra\" are an addition to the scope approved in Milestone 1.\n\n"
+        f"Delivery days {start.date()} to {last_day}. Core zones come first, then the zones in "
+        "the group \"extra\".\n\n"
         f"A zone passes when prices reach {price_min} and the load forecast and at least one "
         f"wind column reach {forecast_min}, in every year. The gate table shows the lowest "
         "yearly share. The gate decides the extra zones only. Core zones are never cut, so "

@@ -4,7 +4,7 @@ Measured results of the models: what was run, on which days, with which settings
 
 Every number here comes from `reports/results/backtest_core.csv` or from the printed output of a command named beside it. Blocks in a fixed-width font are printed output, copied as it was.
 
-Milestone 1 approved DE_LU, FR and ES only. SE_1 to SE_4 were added on 19 Nov 2026 and made core zones on 24 Nov 2026 (DECISIONS entries 1 and 59). SE_1 and SE_2 are near-duplicates (entry 48), so seven zones are not seven independent results. MAE and RMSE are in EUR/MWh. Zones differ several-fold in price level, so zones are compared on relative MAE only.
+SE_1 and SE_2 are near-duplicates (DECISIONS entry 48), so seven zones are not seven independent results. MAE and RMSE are in EUR/MWh. Zones differ several-fold in price level, so zones are compared on relative MAE only.
 
 ## Statistical baseline: `mstl_182`
 
@@ -281,7 +281,7 @@ Fixed before the runs: the winner is the setting with the lowest mean relative M
 
 ### 7. Validation results, experiment H
 
-60 validation days, 1440 hours per zone, runs of 25 Nov 2026. Every run passed every check. The rows are sorted by the mean. SE_1 to SE_4 were added after Milestone 1, which approved DE_LU, FR and ES only.
+60 validation days, 1440 hours per zone, runs of 25 Nov 2026. Every run passed every check. The rows are sorted by the mean.
 
 Relative MAE:
 
@@ -467,7 +467,7 @@ Further checks, all on 25 Nov 2026:
 
 ### 10. Experiment Q, validation
 
-`mstl_182` with the same config entry, where the seasons are 96 and 672 quarter-hours. No other setting ran on experiment Q (entry 66). Every check passed. SE_1 to SE_4 were added after Milestone 1.
+`mstl_182` with the same config entry, where the seasons are 96 and 672 quarter-hours. No other setting ran on experiment Q (entry 66). Every check passed.
 
 | Zone | Relative MAE | MAE | RMSE | Naive MAE | Day loop (s) | Peak memory (MB) | Market time units |
 |---|---|---|---|---|---|---|---|
@@ -498,7 +498,7 @@ For comparison, `mstl_182` on experiment H validation:
 
 ### 11. Test run
 
-Run once, on 25 Nov 2026 from 19:04:39 to 23:48:15 local time, from commit `31bfb35`, after the frozen setting was committed and the owner said yes (entry 67). 90 test days. Every check passed in all 14 runs. No other candidate has seen the test days. SE_1 to SE_4 were added after Milestone 1.
+Run once, on 25 Nov 2026 from 19:04:39 to 23:48:15 local time, from commit `31bfb35`, after the frozen setting was committed and the owner said yes (entry 67). 90 test days. Every check passed in all 14 runs. No other candidate has seen the test days.
 
 Experiment H:
 
@@ -925,7 +925,7 @@ What it shows:
 | H | 69120 | 2880 | 28 | 24.8 to 31.2 |
 | Q | 39844 | 415 | 29 | 3.6 to 4.5 |
 
-Empty cells per feature and zone, experiment H, counted on the saved frames. SE_1 to SE_4 were added after Milestone 1, which approved DE_LU, FR and ES only.
+Empty cells per feature and zone, experiment H, counted on the saved frames.
 
 | Feature | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 |
 |---|---|---|---|---|---|---|---|

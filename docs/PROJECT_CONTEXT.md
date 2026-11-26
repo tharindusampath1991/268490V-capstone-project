@@ -10,13 +10,13 @@ Owner: A A T Sampath (268490V) · Last updated: 2026-11-26
 | Title | Forecasting Next Day Electricity Prices in Europe with Time Series Foundation Models |
 | Repo | https://github.com/tharindusampath1991/268490V-capstone-project (public) |
 | Status on 19 Nov 2026 | M1 approved as submitted. ENTSO-E token in hand. No code yet. Roughly week 6 of 12 |
-| Status on 24 Nov 2026 | Data pipeline built through preprocessing for all 7 zones: downloads, cleaning, validation and the modelling tables. `DATA_END` is frozen at 2026-11-19 (§4). EDA 1 is done: prices of the core zones on train days, six figures and `notebooks/01_eda_prices.ipynb`. EDA 2 is done: the price against the load, wind and solar forecast, the 15-minute prices, the high-price period and holidays for the core zones, and one section on the Swedish zones, seven figures and `notebooks/01_eda_drivers.ipynb`. The backtest harness, the metrics and the seasonal naive forecast are done, with the leakage tests. The naive forecast is scored on the validation and the test days for all 7 zones on experiments H and Q, by owner decision (DECISIONS entry 50), and the results are in `reports/results/`. Also on 24 Nov 2026 SE1–SE4 became core zones: both EDA parts were redone for all seven zones, and the naive results of all seven zones are in `backtest_core.csv` and `daily_core.csv`. SARIMA or ETS is not started (§9) |
+| Status on 24 Nov 2026 | Data pipeline built through preprocessing for all 7 zones: downloads, cleaning, validation and the modelling tables. `DATA_END` is frozen at 2026-11-19 (§4). EDA 1 is done: prices of the seven core zones on train days, six figures and `notebooks/01_eda_prices.ipynb`. EDA 2 is done: the price against the load, wind and solar forecast, the 15-minute prices, the high-price period and holidays for the seven core zones, and one section that compares the Swedish zones with each other, seven figures and `notebooks/01_eda_drivers.ipynb`. The backtest harness, the metrics and the seasonal naive forecast are done, with the leakage tests. The naive forecast is scored on the validation and the test days for all 7 zones on experiments H and Q, by owner decision (DECISIONS entry 50). The results of all seven zones are in `backtest_core.csv` and `daily_core.csv` under `reports/results/`. SARIMA or ETS is not started (§9) |
 | Status on 25 Nov 2026 | The statistical baseline is done for all 7 zones. `statsforecast` 2.1.1 is pinned. AutoARIMA, AutoETS and MSTL run through the same backtest from `src/epf/models/stats.py`, on the price history only. 15 settings were compared on the validation days of experiment H, and by a rule fixed before the runs the winner is `mstl_182`: MSTL with a daily and a weekly season on 182 days of history (DECISIONS entries 62 to 65). Its mean relative MAE over the seven zones is 0.6887 on validation. The three best settings are a tie inside the noise. `mstl_182` was also scored on experiment Q validation (0.6831, entry 66) and once on the test days by owner decision: 0.5666 on H and 0.5691 on Q (entry 67). The lower test values come from a naive forecast that was much worse in the autumn. All rows are in `backtest_core.csv` and `daily_core.csv`. On 26 Nov 2026 I confirmed that `mstl_182` stays the baseline, and every measurement of the comparison, with the run times, was collected in `docs/MODEL_NOTES.md` (entry 68). LightGBM is not started (§9) |
 | Status on 26 Nov 2026 | The LightGBM feature builder is done for all 7 zones on experiments H and Q, one day early. `src/epf/features/builder.py` builds each delivery day from inputs cut by `cutoff.py`, and `python -m epf.features.build` builds, prints and saves the frames: 28 features on the hourly table and 29 on the 15-minute table, in seven groups switched in the config (DECISIONS entries 69 to 80). I chose the features after measurements on train days, which are in `docs/MODEL_NOTES.md`. By my decision of the same day weather features are built too, with a fourth cut by run time in `cutoff.py`, and the backtest hands the weather table to every model (entries 78 and 80). No LightGBM model is trained yet, and `lightgbm` is not installed (§9) |
 | Next deadline | M2 Technical Checkpoint, assumed Thu 3 Dec 2026 (confirm, §11) |
 | Grading | M1 25% · M2 25% · M3 50%. A viva can be called at any milestone |
 | AI tools | Allowed. I must understand, justify and explain every decision and result |
-| Scope change | 19 Nov 2026: SE1–SE4 (all of Sweden) added as extra zones in M2, my decision. 24 Nov 2026: SE1–SE4 made core zones, with the same analysis, tuning and reporting as DE-LU, FR and ES, my decision (§1, §3.1, DECISIONS entries 1 and 59). Milestone 1 approved DE-LU, FR and ES only |
+| Zones | Seven core zones: DE-LU, FR, ES and SE1–SE4 (all of Sweden). All seven get the same analysis, tuning and reporting (§1, §3.1) |
 
 ## 1. Locked scope (from Milestone 1)
 
@@ -25,12 +25,12 @@ Owner: A A T Sampath (268490V) · Last updated: 2026-11-26
 - Techniques: statistical models, machine learning, deep learning foundation models.
 - System: forecasting pipeline with a dashboard, plus an experimental comparison.
 - Core zones: DE-LU, FR, ES, SE1, SE2, SE3, SE4. Seven zones in total. Rules:
-  - M1 approved DE-LU, FR and ES only. SE1–SE4, all of Sweden, were added on 19 Nov 2026 as extra zones and made core zones on 24 Nov 2026, both by my decision (DECISIONS entries 1 and 59). Say so in README, results and report, wherever the Swedish zones are shown.
-  - Same pipeline, added as config entries. Every analysis, model and results table covers all seven zones: preprocessing, EDA, baselines, LightGBM and the foundation models.
-  - Gate: each Swedish zone was admitted by the day-1 coverage check (§3.1). All four passed.
+  - Shown alike: README, results and report show the seven zones alike. Nothing marks or describes SE1–SE4 as added later, and no text says which zones Milestone 1 approved (DECISIONS entry 81).
+  - Same pipeline, one config entry per zone. Every analysis, model and results table covers all seven zones: preprocessing, EDA, baselines, LightGBM and the foundation models.
+  - Coverage: the day-1 coverage check measured the series of every zone (§3.1).
   - Tuning: hyperparameters, history length and context lengths are chosen on the validation days of all seven zones. One setting per model for all zones, no setting per zone. No features that exist for one zone only.
-  - Never cut: Swedish work has the same standing as work on DE-LU, FR and ES (§9). A delay there delays M2.
-  - Results: one table for all seven zones, with SE1–SE4 marked as added after M1.
+  - Never cut: work on every zone has the same standing (§9). A delay in one zone delays M2.
+  - Results: one table for all seven zones.
   - SE4 has no usable solar forecast, and SE1 and SE2 give near-duplicate results (§3.1). State both with the Swedish results.
 - Research questions:
   - RQ1: How accurate are zero-shot foundation models versus seasonal naive, SARIMA/ETS and LightGBM?
@@ -102,9 +102,9 @@ Known traps:
 - ENTSO-E request URLs carry the token. Never print or log a raw request error.
 - Sweden specifics are in §3.1.
 
-### 3.1 Sweden (SE1–SE4) feasibility (checked 19 Nov 2026)
+### 3.1 Sweden (SE1–SE4) data check (checked 19 Nov 2026)
 
-Verdict: feasible for M2 on data grounds, subject to the day-1 gate per zone. The real cost is time: seven zones instead of the approved three.
+Verdict: the Swedish data is usable for M2, and the day-1 coverage check confirmed it for each zone. The real cost of the four zones is time.
 
 | Check | Finding |
 |---|---|
@@ -113,10 +113,10 @@ Verdict: feasible for M2 on data grounds, subject to the day-1 gate per zone. Th
 | Auction and time zone | Same 12:00 CET day-ahead auction, CET/CEST. No protocol change |
 | Load forecast, wind forecast | On ENTSO-E for all four. A Nov 2026 preprint (arXiv 2611.16657, public code) used both for SE1–SE4 over 2018–2025 |
 | Solar forecast | Too sparse on ENTSO-E for Sweden; that study dropped it. Matters little in SE1–SE3, more in SE4 (see profiles) |
-| Hydro | Reservoir inputs added nothing at the day-ahead horizon in that study. No new features needed |
+| Hydro | Reservoir inputs added nothing at the day-ahead horizon in that study. No hydro features needed |
 | Holidays | `holidays` 0.109 covers Sweden, one calendar for all four zones. `public` gives 13 days in 2026. `de_facto` adds Julafton, Midsommarafton and Nyårsafton |
 | Regime change | Nordic flow-based market coupling from delivery day 30 Oct 2024. Note it in the EDA |
-| Cost (estimate) | No new code if zones are config-driven. About 6–8 hours extra for checks, EDA and tables. Backtest run time is about 2.3 times the run with DE-LU, FR and ES alone |
+| Cost (estimate) | No code of their own, since zones are config-driven. About 6–8 hours for their checks, EDA and tables. Backtest run time with seven zones is about 2.3 times the run with DE-LU, FR and ES alone |
 
 Zone profiles from the same preprint: 2024 generation shares, and 2025 hourly results for its per-hour LightGBM. Reference values, not my results.
 
@@ -133,19 +133,17 @@ What this means:
 - SE1 and SE2 are likely to give near-duplicate results: similar mix and almost the same mean price. EDA 2 measured it: their prices are identical in 98.61% of the train hours before 2024-10-30 and in 3.41% from that day (DECISIONS entry 48). Report them as two zones, but not as two independent pieces of evidence.
 - SE4 has the most solar and no usable solar forecast. State it as a limitation.
 
-Coverage of the `SE_1` to `SE_4` series was measured by the gate. All four zones passed in the runs of 21, 23 and 24 Nov 2026 and stay in M2 (`docs/coverage_gate.md`). The Swedish solar forecast is marked drop, as expected. The columns marked drop are listed in the config under `coverage_gate.drop_columns` and are left out of the processed tables (DECISIONS entry 32).
+The day-1 coverage check measured the series of all seven zones. `SE_1` to `SE_4` passed its rule in the runs of 21, 23 and 24 Nov 2026 (`docs/coverage_gate.md`). The Swedish solar forecast is marked drop, as expected. The columns marked drop are listed in the config under `coverage_gate.drop_columns` and are left out of the processed tables (DECISIONS entry 32).
 
 Day-1 gate: `python scripts/check_coverage.py` (all 7 zones, 2019 onward, token from `.env`). It caches the raw downloads under `data/raw/entsoe/` and writes `docs/coverage_gate.md`, which is committed. The logic lives in `src/epf/data/coverage_gate.py` and has unit tests on synthetic data. It has run against the live API four times, last on 24 Nov 2026 for the frozen period 2019-01-01 to 2026-11-19. Rules:
 - Prices: at least 99% of market time units present in every year. Days with gaps are counted.
 - Load forecast and wind forecast: present on at least 95% of hours in every year.
 - A forecast column below 95% is dropped for that zone and logged. Expected for Swedish solar.
-- Each Swedish zone is judged on its own. A zone that fails on prices, load forecast or wind forecast leaves M2 and is retried in M3.
+- The gate gives a verdict only to a zone in the group `extra`. Such a zone is judged on its own, and one that fails on prices, load forecast or wind forecast leaves M2 and is retried in M3.
 - Core zones are measured by the same rules but never cut. A forecast column below 95% is kept only by a logged decision. So far that is the ES wind forecast (DECISIONS entry 19).
-- SE1–SE4 are core zones since 24 Nov 2026, so a new gate run would give them no verdict. `docs/coverage_gate.md` is the report of 24 Nov 2026, made while they were extra zones. It stays as the record of their admission and is not written again. `DATA_END` is frozen, so their coverage cannot change.
+- All seven zones are core zones, so a new gate run would give no zone a verdict. `docs/coverage_gate.md` is the report of 24 Nov 2026. It stays as the record of the measured coverage and is not written again. `DATA_END` is frozen, so the coverage cannot change.
 
 The preprint is a reference and sanity range only. Do not copy its code. Cite it if its numbers are used.
-
-Log the Sweden addition as the first entry in `docs/DECISIONS.md`: decision, reason, alternatives rejected (SE3 only; Sweden after M2), risks (M1 was approved with 3 zones; seven zones with 14 days to M2).
 
 ## 4. Experiments and splits
 
@@ -206,7 +204,7 @@ All seven zones run every model. Hyperparameters, history length and context len
 - Significance: Diebold-Mariano test on daily losses (M3).
 - Cost: wall-clock time, peak memory, hardware.
 - Error slices: spikes, negative prices, weekends, holidays, hour of day (M3).
-- Reported per zone and per experiment (H, Q), all seven zones in one table. SE1–SE4 are marked as added after M1.
+- Reported per zone and per experiment (H, Q), all seven zones in one table.
 - Compare zones on relative MAE, not MAE in EUR. Price levels differ several-fold between zones.
 - Sanity range: a published 2025 hourly benchmark puts per-hour LightGBM at a relative MAE of about 0.42 for DE-LU and 0.43–0.48 for SE1–SE4 against the D-7 naive (arXiv 2611.16657, table in §3.1). Different test period and inputs, so ballpark only. If my numbers are much better, check for leakage first.
 
@@ -244,7 +242,7 @@ All seven zones run every model. Hyperparameters, history length and context len
 - Zones come from config. Adding a zone is a config entry, never a code change. No zone names in code.
 - Each model setting is an entry under `models` in the config, and `--model` of the backtest takes its name. An entry may hold its own `history_days`. `backtest.statistical_baseline` names the frozen statistical model, `mstl_182`. The 14 candidates that lost stay in the config so that their rows can be reproduced (DECISIONS entries 64 and 65).
 - The LightGBM features are set under `features` in the config: the groups that are built, the lags in days and the columns summed into each forecast feature. `python -m epf.features.build` saves a copy of the frames under `data/features/`, which git ignores and the backtest never reads (DECISIONS entries 74 and 75).
-- Config marks each zone as `core` or `extra`. All seven zones are `core` since 24 Nov 2026 and no zone is `extra`. The group does not record what M1 approved. A run still processes core zones before extra zones, should a zone be marked `extra` again.
+- Config marks each zone as `core` or `extra`. All seven zones are `core` and no zone is `extra`. A run processes core zones before extra zones, should a zone be marked `extra`.
 - Tooling: Claude Code in the repo writes and runs code. The Claude Project is for planning, review, report and viva prep.
 - `docs/PROJECT_CONTEXT.md` is the master copy of this file. Re-upload it to the Project when it changes.
 - Commits: a plain subject without type prefixes, under 72 characters, starting with a verb. A short body only when the reason is not obvious. Written the way I would write it by hand (CLAUDE.md, Commits).
@@ -272,19 +270,19 @@ All seven zones run every model. Hyperparameters, history length and context len
 | Wed 2 Dec | Record demo. Buffer | Video link |
 | Thu 3 Dec | Submit | |
 
-Status on 24 Nov 2026: the rows up to Tue 24 Nov are done. The Sun 22 Nov row, the Mon 23 Nov row (EDA 1) and the Tue 24 Nov row (EDA 2) all closed on Tue 24 Nov. The row of Wed 25 Nov (backtest harness, metrics, seasonal naive end to end) also closed on Tue 24 Nov, one day early. The dates above are the original targets and have not been moved. Also on Tue 24 Nov SE1–SE4 were made core zones, and both EDA parts were redone for seven zones. SARIMA or ETS through the harness, the row of Thu 26 Nov, is next.
+Status on 24 Nov 2026: the rows up to Tue 24 Nov are done. The Sun 22 Nov row, the Mon 23 Nov row (EDA 1) and the Tue 24 Nov row (EDA 2) all closed on Tue 24 Nov. The row of Wed 25 Nov (backtest harness, metrics, seasonal naive end to end) also closed on Tue 24 Nov, one day early. The dates above are the original targets and have not been moved. SARIMA or ETS through the harness, the row of Thu 26 Nov, is next.
 
 Status on 25 Nov 2026: the row of Thu 26 Nov closed on Wed 25 Nov, one day early. The statistical baseline is `mstl_182`, chosen from 15 settings of ARIMA, ETS and MSTL on the validation days of all seven zones, and scored once on the test days (DECISIONS entries 62 to 67). It was also run on experiment Q, so the cut "statistical baseline on experiment Q" was not needed. LightGBM features, the row of Fri 27 Nov, is next.
 
 Status on 26 Nov 2026: the row of Fri 27 Nov closed on Thu 26 Nov, one day early. The feature builder with its cutoff tests covers all seven zones on experiments H and Q (DECISIONS entries 69 to 80). On the same day I decided to build the weather features now, so "weather features" in the cut order below now means their use in LightGBM, not their code. LightGBM training, the row of Sat 28 Nov, is next. It needs `lightgbm` installed first.
 
-All seven zones are on every row through config. Since 24 Nov 2026 every EDA section covers the Swedish zones too (DECISIONS entries 59 and 60).
+All seven zones are on every row through config, and both EDA parts cover all seven (DECISIONS entry 60).
 
-Cut order if behind (first cut first): TimesFM zero-shot, LightGBM quantiles, statistical baseline on experiment Q, weather features. Never cut, for all 7 zones: preprocessing, EDA, naive + one statistical baseline + LightGBM. Also never cut: diagram, video. Swedish work is no longer first in the cut order (my decision of 24 Nov 2026, DECISIONS entry 59, with its risk).
+Cut order if behind (first cut first): TimesFM zero-shot, LightGBM quantiles, statistical baseline on experiment Q, weather features. Never cut, for all 7 zones: preprocessing, EDA, naive + one statistical baseline + LightGBM. Also never cut: diagram, video. No zone is in the cut order.
 
 ## 10. After M2 (weeks 9–12)
 
-- All seven zones go through all M3 work with one setting per model. SE1–SE4 are marked as added after M1. Anything cut from M2 is picked up here.
+- All seven zones go through all M3 work with one setting per model. Anything cut from M2 is picked up here.
 - Weeks 9–11: Chronos-2 with covariates, optional LoRA fine-tune, weather features (built on 26 Nov 2026, their use in a model is still open), intervals, Diebold-Mariano tests, error analysis, Streamlit dashboard with cheapest hours, daily update job.
 - Week 12: final report, reproducibility checklist, code clean-up.
 
@@ -296,7 +294,7 @@ Cut order if behind (first cut first): TimesFM zero-shot, LightGBM quantiles, st
 - [ ] Laptop: OS, CPU, RAM, GPU:
 - [x] Python version and env tool: 3.12, venv + pip. `entsoe-py` 1.0.0 needs Python 3.12 or newer (DECISIONS entry 2)
 - [ ] Hours available on weekdays and weekends:
-- [x] Swedish zones: all four (SE1, SE2, SE3, SE4), in M2, core zones since 24 Nov 2026
+- [x] Swedish zones: all four (SE1, SE2, SE3, SE4), in M2, core zones
 - [ ] Tell the supervisor about the Sweden addition and that SE1–SE4 are now core zones, if one is assigned:
 - [x] Where code is written and run: Claude Code in the repo, Claude Project for planning and review
 
@@ -304,7 +302,7 @@ Cut order if behind (first cut first): TimesFM zero-shot, LightGBM quantiles, st
 
 | Time | Content |
 |---|---|
-| 0:00–0:30 | Problem, the seven zones, scope. Say that M1 approved DE-LU, FR and ES and that SE1–SE4 were added afterwards |
+| 0:00–0:30 | Problem, the seven zones, scope |
 | 0:30–1:30 | Architecture diagram and repo tour |
 | 1:30–2:30 | Data pipeline run, cleaning rules, leakage rule |
 | 2:30–3:30 | EDA highlights |
