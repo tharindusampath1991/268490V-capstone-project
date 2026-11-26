@@ -122,8 +122,14 @@ def test_project_config_holds_the_backtest_defaults_of_the_forecast_protocol():
 
     assert config["backtest"]["refit_every_days"] == 7
     assert config["backtest"]["history_days"] is None
-    assert config["backtest"]["test_models"] == ["naive", config["backtest"]["statistical_baseline"]]
     assert build_model(config, "naive").params == {"lag_days": 7}
+
+
+def test_project_config_opens_the_test_days_to_naive_and_the_frozen_models_only():
+    backtest = load_config()["backtest"]
+
+    assert backtest["test_models"] == ["naive", backtest["statistical_baseline"],
+                                       backtest["lightgbm_model"]]
 
 
 def test_project_config_keeps_the_forecasts_under_the_folder_that_git_ignores():

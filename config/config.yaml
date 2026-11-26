@@ -95,7 +95,8 @@ backtest:
   lightgbm_model: lgbm_load_826_slow
   # Models that may be scored on the test days. Every other model is refused there.
   # mstl_182 was added on 2026-11-25, after it was frozen and the owner said yes.
-  test_models: [naive, mstl_182]
+  # lgbm_load_826_slow was added on 2026-11-26, after it was frozen and the owner said yes.
+  test_models: [naive, mstl_182, lgbm_load_826_slow]
   price_column: price             # known through the end of D-1
   day_ahead_columns:              # day-ahead forecasts, known through the end of D
     - load_forecast
