@@ -518,6 +518,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Check on the real tables: every cell of the 14 built frames, 21635852 in all, was compared with a plain pandas computation on the whole table that does not go through `day_inputs`. None differs.
 - Alternative rejected: Computing every feature on the whole table at once and blanking what lies behind a cut. It is much faster, but the cuts would then exist in a second place, and a wrong mask leaks without an error (the reason of entry 51).
 - Limits: The build takes 25 to 31 seconds per zone on the hourly table of 2880 days and about 4 seconds on the 15-minute table, 230 seconds for the whole command. A model that builds its training rows again at every weekly fit pays this each time. `builder.py` and `build.py` are files beyond the layout of the first plan.
+- Update, 2026-11-26: Counted again on this day, the price cut fails 55 tests, not 54. The weather run cut now fails 5, because a test for a run one hour after the run hour was added. The day-ahead cut, the actual load cut and the weather time cut fail 18, 19 and 1 as before. The table is in `docs/MODEL_NOTES.md`.
 
 ## 70. Price features: lags of 1 to 7 days and four statistics of D-1
 - Date: 2026-11-26, chosen by the owner
@@ -570,6 +571,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Decision: Every lag of prices, forecasts and actual load calls `source_times` of `src/epf/models/naive.py`: the same wall-clock time in market time some days before, and a whole number of 24 hours before the target where that time is missing or double (entry 52). So `price_lag_7` equals the seasonal naive forecast, and a test asserts it on seven days around both clock changes, hourly and 15-minute. The statistics of D-1 cover every market time unit of that calendar day: 23, 24 or 25 hours.
 - Reason: The daily price shape follows the local clock (entry 39). One rule for the naive forecast and for the features means the model and its reference read the same hour.
 - Alternative rejected: A fixed number of 24 hours in UTC. It needs no special case, but in the days after a clock change every lag would sit one local hour off.
+- Update, 2026-11-26: Six of the seven days of that test have a clock change on D, D-1 or D-7. The seventh, 2026-07-01, is a plain day.
 
 ## 77. Calendar features, empty values and no scaling
 - Date: 2026-11-26
@@ -585,6 +587,7 @@ Numbered entries: decision, reason, alternative rejected, date.
 - Evidence, train days from 2024-03-15, the least-squares stand-in of entry 75: the four weather values move the mean relative MAE from 0.4715 to 0.4674 for one fit and from 0.4510 to 0.4503 for a fit per hour. They help in FR, SE_3 and SE_4 and hurt slightly in DE_LU and SE_2.
 - Alternatives rejected: Weather after M2, which I had recommended, because it widens the day and needs a change under `src/epf/evaluation/`. A cut by time only, which never reads the run column.
 - Limits: Weather exists from delivery day 2024-03-15, so the features are empty on 45600 of the 69120 hours of the hourly frame. In the real table both conditions cut the same rows, because the hours of D+1 come from the run of D. That the run of 00:00 UTC is published before gate closure is taken from the Open-Meteo docs and not measured (entry 26). One point stands for a zone (entry 27). The measured gain is small.
+- Update, 2026-11-26: In SE_3 the weather values help for one fit only, from 0.4735 to 0.4630. For a fit per hour SE_3 gets worse, from 0.4463 to 0.4527. The table is in `docs/MODEL_NOTES.md`.
 
 ## 79. Radiation is taken one hour later, and weather stands on the four quarter-hours of its hour
 - Date: 2026-11-26, proposal approved by the owner

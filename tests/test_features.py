@@ -170,7 +170,7 @@ def test_a_price_lag_is_the_price_at_the_same_time_some_days_before():
     assert features["price_lag_7"].tolist() == (at("2026-06-24") + hours).tolist()
 
 
-# D, D-1 or D-7 is a clock-change day.
+# 2026-07-01 is a plain day. On each of the six other days D, D-1 or D-7 is a clock-change day.
 @pytest.mark.parametrize("make_index", [hourly_index, quarter_hour_index])
 @pytest.mark.parametrize("day", ["2026-07-01", "2026-10-25", "2026-10-26", "2026-11-01",
                                  "2026-03-29", "2026-03-30", "2026-04-05"])

@@ -912,7 +912,7 @@ What it shows:
 - On the hourly table a fit per hour is ahead by 0.007 in the mean. It is better in five zones and worse in FR and ES.
 - On the 15-minute table a fit per time of day breaks: each fit has about 200 rows.
 - The hourly prices of D-1 make the mean worse in both experiments, so they are not features.
-- The four weather values move the mean by 0.004 for one fit and by 0.001 for a fit per hour. They help in FR, SE_3 and SE_4 and hurt slightly in DE_LU and SE_2.
+- The four weather values move the mean by 0.004 for one fit and by 0.001 for a fit per hour. They help in FR and SE_4 and hurt slightly in DE_LU and SE_2. In SE_3 they help for one fit, from 0.4735 to 0.4630, and not for a fit per hour, where SE_3 gets worse from 0.4463 to 0.4527.
 - The radiation of the hour 23:00 to 24:00 is 0 on every train day in six zones, and at most 1.0 W/m2 in SE_1.
 - Limit: a least-squares fit is not LightGBM. A tree model on one frame can learn a different behaviour per hour. These relative MAE values are on train days and are not results of a model of this project.
 
@@ -1009,14 +1009,14 @@ Where the empty cells come from:
 - Value ranges on train days: 12 range rules on 14 frames, none broken. Hours are 0 to 23, quarter-hours 0 to 3, weekdays 0 to 6, and no load, wind, solar, wind speed or radiation value is below zero. Every price lag lies inside the price range of the train days.
 - One thing stands out on train days: the actual load of SE_1 reaches 4428 MW where its load forecast never exceeds 2204, and that of SE_2 reaches 8477 against 3608. The values stay as they are.
 
-Each cut was moved on purpose once, the tests were run, and the code was put back. "Tests" are the 237 tests of the six files that touch the cuts.
+Each cut was moved on purpose once, the tests were run, and the code was put back. The table was counted again on 2026-11-26, after the test for a weather run one hour after the run hour was added. This time each change was made in memory, no file was changed, and the whole suite of 628 tests was run. Every failed test is in one of the five test files whose tests call `day_inputs`, which hold 228 tests: `tests/test_backtest.py`, `tests/test_cutoff.py`, `tests/test_features.py`, `tests/test_features_build.py` and `tests/test_stats.py`. "Feature tests" are the failed tests of `tests/test_features.py` and `tests/test_features_build.py`.
 
 | Change | Failed tests | Of them feature tests |
 |---|---|---|
-| Price cut: end of D-1 to end of D | 54 | 30 |
+| Price cut: end of D-1 to end of D | 55 | 31 |
 | Day-ahead cut: end of D to end of D+1 | 18 | 2 |
 | Actual load cut: end of D-2 to end of D-1 | 19 | 3 |
-| Weather run cut: run of D-1 to run of D | 4 | 1 |
+| Weather run cut: run of D-1 to run of D | 5 | 1 |
 | Weather time cut: end of D to end of D+1 | 1 | 0 |
 | Builder: every lag one day too short | 46 | 46 |
 | Builder: radiation not moved by one hour | 3 | 3 |
