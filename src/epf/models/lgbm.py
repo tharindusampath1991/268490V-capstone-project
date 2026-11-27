@@ -232,8 +232,8 @@ def check_kinds(settings: dict) -> None:
     """Refuse an entry with a value of the wrong kind, before the values themselves are read.
 
     Raises ValueError when groups is not a list, when params is not a
-        dictionary, and when trees, or a history_days that is set, is not a
-        whole number.
+        dictionary or holds a value that is not a number, and when trees, or
+        a history_days that is set, is not a whole number.
     """
     problems = []
     if not isinstance(settings["groups"], list):
@@ -241,6 +241,10 @@ def check_kinds(settings: dict) -> None:
     if not isinstance(settings["params"], dict):
         problems.append("params must be a dictionary, {} for no parameter, not "
                         f"{settings['params']!r}")
+    else:
+        # LightGBM trains with an empty value or a list and says nothing.
+        problems += [f"the parameter '{key}' must be a number, not {value!r}"
+                     for key, value in settings["params"].items() if not is_number(value)]
     if not is_whole_number(settings["trees"]):
         problems.append(f"trees must be a whole number, not {settings['trees']!r}")
     history = settings.get(HISTORY)
@@ -280,6 +284,11 @@ def is_whole_number(value: object) -> bool:
     """Return True for a whole number. True and False are not taken as 1 and 0."""
     # In Python a bool is an int, so isinstance(True, int) holds.
     return isinstance(value, int) and not isinstance(value, bool)
+
+
+def is_number(value: object) -> bool:
+    """Return True for a whole or a decimal number. True and False are not taken as 1 and 0."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def refuse(problems: list[str]) -> None:

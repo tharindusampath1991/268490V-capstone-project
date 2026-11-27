@@ -231,6 +231,25 @@ def test_project_config_names_a_frozen_lightgbm_model_that_is_a_model_entry():
     assert build_model(config, name).name == name
 
 
+# The features section as it stood when the LightGBM model was frozen. A results row holds
+# the entry of the model, with its groups, but not these settings.
+FROZEN_FEATURES = {
+    "groups": ALL_GROUPS,
+    "price_lag_days": [1, 2, 3, 4, 5, 6, 7],
+    "price_day_stats": ["mean", "min", "max", "last"],
+    "forecasts": {"load_forecast": ["load_forecast"],
+                  "wind_forecast": ["wind_onshore_forecast", "wind_offshore_forecast"],
+                  "solar_forecast": ["solar_forecast"]},
+    "forecast_lag_days": [1, 7],
+    "actual_load_lag_days": [2],
+    "weather_hour_before": ["shortwave_radiation"],
+}
+
+
+def test_project_config_holds_the_feature_settings_that_the_frozen_lightgbm_model_reads():
+    assert load_config()["features"] == FROZEN_FEATURES
+
+
 def test_project_config_holds_the_five_quantile_levels():
     backtest = load_config()["backtest"]
 

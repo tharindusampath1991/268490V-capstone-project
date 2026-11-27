@@ -437,6 +437,28 @@ def test_run_ends_with_one_line_for_a_config_without_the_quantile_levels(tmp_pat
     assert not Path(config["paths"]["forecasts"]).exists()
 
 
+def test_a_config_without_the_frozen_name_is_refused(tmp_path):
+    config = project_config(tmp_path)
+    del config["backtest"]["lightgbm_model"]
+
+    with pytest.raises(ValueError, match="backtest.lightgbm_model"):
+        quantile_model(config)
+
+
+def test_run_ends_with_one_line_for_a_config_without_the_frozen_name(tmp_path):
+    config = project_config(tmp_path)
+    del config["backtest"]["lightgbm_model"]
+    save_tables(config)
+
+    with pytest.raises(SystemExit) as refused:
+        run(config, "validation")
+
+    assert refused.value.code == ("The config has no backtest.lightgbm_model, the name of the "
+                                  "frozen LightGBM entry.")
+    assert not Path(config["paths"]["results"]).exists()
+    assert not Path(config["paths"]["forecasts"]).exists()
+
+
 def test_run_writes_one_row_per_zone_and_experiment_with_the_scores(tmp_path):
     config = project_config(tmp_path)
     save_tables(config)

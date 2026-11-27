@@ -170,7 +170,8 @@ def build_model(config: dict, name: str) -> Model:
     sections features and open_meteo. An entry of any other family is a
     statistical model.
     Raises ValueError for a name that has no entry, for an entry without a
-        family and for settings that the model refuses.
+        family, for an lgbm entry in a config without one of its two
+        sections and for settings that the model refuses.
     """
     entries = config["models"]
     if name not in entries:
@@ -180,6 +181,10 @@ def build_model(config: dict, name: str) -> Model:
     if "family" not in entries[name]:
         raise ValueError(f"The model entry '{name}' names no family.")
     if entries[name]["family"] == lgbm.FAMILY:
+        missing = [section for section in ("features", "open_meteo") if section not in config]
+        if missing:
+            raise ValueError(f"The model entry '{name}' is of the family {lgbm.FAMILY}, which "
+                             f"needs the config sections {missing}.")
         return lgbm.LgbmModel(name, entries[name], feature_settings(config), cut_columns(config),
                               weather_rule(config), set_seed(config))
     return StatsModel(name, entries[name])

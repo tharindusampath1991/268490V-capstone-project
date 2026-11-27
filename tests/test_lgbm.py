@@ -712,6 +712,18 @@ def test_a_value_of_the_wrong_kind_is_refused(change, message):
         model_with({**ENTRY, **change})
 
 
+# An empty value in the YAML file gives None. Every allowed parameter takes a number.
+@pytest.mark.parametrize("key, value", [
+    ("max_depth", None),
+    ("learning_rate", [0.1]),
+    ("num_leaves", "8"),
+    ("bagging_freq", True),
+])
+def test_a_parameter_value_that_is_not_a_number_is_refused(key, value):
+    with pytest.raises(ValueError, match=f"LightGBM entry: .*'{key}' must be a number"):
+        model_with({**ENTRY, "params": {**ENTRY["params"], key: value}})
+
+
 def test_a_group_that_the_feature_settings_do_not_build_is_refused():
     built = replace(FEATURES, groups=("price", "calendar"))
 
@@ -889,6 +901,26 @@ def test_run_ends_with_one_line_for_a_parameter_value_that_lightgbm_refuses(tmp_
         run(config, "lgbm_small", "validation")
 
     assert not Path(config["paths"]["results"]).exists()
+
+
+@pytest.mark.parametrize("section", ["features", "open_meteo"])
+def test_run_ends_with_one_line_for_a_lightgbm_entry_in_a_config_without_a_section(
+        section, tmp_path):
+    config = project_config(tmp_path)
+    del config[section]
+    save_tables(config)
+
+    with pytest.raises(SystemExit, match=f"'lgbm_small'.*lgbm.*'{section}'"):
+        run(config, "lgbm_small", "validation")
+
+    assert not Path(config["paths"]["results"]).exists()
+
+
+def test_a_statistical_entry_runs_in_a_config_without_the_two_lightgbm_sections(tmp_path):
+    config = project_config(tmp_path)
+    del config["features"], config["open_meteo"]
+
+    assert isinstance(build_model(config, "ets_short"), StatsModel)
 
 
 # The code.

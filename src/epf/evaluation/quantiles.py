@@ -102,12 +102,15 @@ def quantile_model(config: dict) -> LgbmQuantileModel:
     Output: the model, named after the entry with SUFFIX added. It gets the
         feature settings, the columns under each cut, the weather rule and
         the seed of the config, as the point model does.
-    Raises ValueError when the config has no levels, when the name has no
-        entry, and for an entry or levels that the model refuses.
+    Raises ValueError when the config has no levels or no name, when the
+        name has no entry, and for an entry or levels that the model refuses.
     """
     if "quantile_levels" not in config["backtest"]:
         raise ValueError("The config has no backtest.quantile_levels, the levels of the "
                          "quantile forecasts.")
+    if "lightgbm_model" not in config["backtest"]:
+        raise ValueError("The config has no backtest.lightgbm_model, the name of the "
+                         "frozen LightGBM entry.")
     name = config["backtest"]["lightgbm_model"]
     if name not in config["models"]:
         raise ValueError(f"backtest.lightgbm_model names '{name}', which is no entry "

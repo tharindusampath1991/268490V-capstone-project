@@ -19,6 +19,7 @@ A model receives a DayInputs object and nothing else. The rows after a cut
 are not in it. Tables have a UTC index.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -99,7 +100,7 @@ def day_inputs(table: pd.DataFrame, day_start: pd.Timestamp, day_end: pd.Timesta
                target_index: pd.DatetimeIndex, columns: Columns,
                history_days: int | None = None, weather: pd.DataFrame | None = None,
                rule: WeatherRule | None = None,
-               holidays: frozenset[date] = frozenset()) -> DayInputs:
+               holidays: Collection[date] = frozenset()) -> DayInputs:
     """Cut a table to what is known when delivery day D is forecast.
 
     Input: a table with a UTC index, 00:00 in market time on D and on D+1,
