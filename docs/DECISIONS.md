@@ -811,3 +811,63 @@ Experiment Q:
 - Timing before the runs: One zone was timed on the three last train days, 2026-06-20 to 2026-06-22, at 14 and at 84 days. The script printed seconds, the number of values and memory, and no error measure. A forecast of Chronos-2 took 0.067 and 0.132 seconds on the hourly table and 0.101 and 0.351 on the 15-minute table. A forecast of TimesFM took 0.219 and 0.372 seconds, and 0.347 and 0.940. For 420 forecasts per run that projects to 20 minutes for the eight runs on experiment H and two on experiment Q, below the limit of 4 hours that the owner set.
 - Alternatives rejected: A longer context for TimesFM alone. 168 days would fit its limit on the 15-minute table, but the two models would then read different days. A context of 7 days, which holds the weekly season once.
 - Limits: On the hourly table Chronos-2 could read up to 341 days. That was not tried, because the same entry must fit the 15-minute table. Eight settings are judged on 60 days of one summer.
+
+## 98. `chronos2_84` and `timesfm25_84` are the frozen zero-shot settings
+- Date: 2026-11-27, by the rule of entry 97. Proposed, not yet decided by the owner
+- Decision: `backtest.chronos2_model` in the config is `chronos2_84`, and `backtest.timesfm25_model` is `timesfm25_84` (commit `978f516`). Each reads the prices of the last 84 days. The six candidates that lost stay in the config so that their rows can be reproduced. No zero-shot setting has seen the test days, and none stands under `backtest.test_models`.
+- Result: 60 validation days, 2026-06-23 to 2026-08-21, 1440 hours per zone. Each of the eight runs ended with exit code 0 and passed its four checks in all seven zones. Each added 7 rows to `backtest_core.csv` and 420 to `daily_core.csv`, and no earlier line changed. The rows below are those that `python -m epf.evaluation.tables --experiment H --split validation` prints for these models. Run time is the sum of the seven day loops in seconds. SE_1 and SE_2 are near-duplicates (entry 48), so the mean counts the north of Sweden about twice.
+
+| Setting | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean | Run time |
+|---|---|---|---|---|---|---|---|---|---|
+| `lgbm_load_826_slow` | 0.4909 | 0.5548 | 0.5707 | 0.6235 | 0.5122 | 0.4890 | 0.4797 | 0.5316 | 436.8 |
+| `chronos2_84` | 0.5874 | 0.5071 | 0.5463 | 0.6217 | 0.5893 | 0.5335 | 0.5006 | 0.5551 | 58.7 |
+| `chronos2_56` | 0.5859 | 0.5118 | 0.5519 | 0.6147 | 0.5912 | 0.5404 | 0.5129 | 0.5584 | 50.4 |
+| `chronos2_28` | 0.6080 | 0.5234 | 0.5527 | 0.6176 | 0.5995 | 0.5350 | 0.4950 | 0.5616 | 39.9 |
+| `chronos2_14` | 0.6292 | 0.5681 | 0.6246 | 0.6376 | 0.6145 | 0.5497 | 0.5383 | 0.5946 | 31.4 |
+| `timesfm25_84` | 0.6398 | 0.6308 | 0.6763 | 0.6796 | 0.6525 | 0.5787 | 0.5508 | 0.6298 | 153.8 |
+| `timesfm25_56` | 0.6571 | 0.6119 | 0.6806 | 0.6999 | 0.6580 | 0.5881 | 0.5563 | 0.6360 | 133.5 |
+| `timesfm25_28` | 0.6494 | 0.6129 | 0.6830 | 0.7128 | 0.6517 | 0.6056 | 0.5646 | 0.6400 | 105.6 |
+| `timesfm25_14` | 0.7126 | 0.6353 | 0.6908 | 0.6731 | 0.6417 | 0.6279 | 0.6092 | 0.6558 | 89.9 |
+| `mstl_182` | 0.7106 | 0.6521 | 0.7165 | 0.7317 | 0.6666 | 0.6596 | 0.6837 | 0.6887 | 565.9 |
+| `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 2.1 |
+
+- The winners by the rule of entry 97: `chronos2_84` with a mean of 0.5551 among the Chronos-2 settings, and `timesfm25_84` with 0.6298 among the TimesFM settings.
+- What the numbers support: The differences below come from `python -m epf.evaluation.firmness`, a bootstrap over the 60 days with 2000 resamples of whole days and seed 42. A plus sign means that the first setting named is worse than the winner of its model. 14 days of context are too short: `chronos2_14` is +0.0395 (95% interval +0.0161 to +0.0638) and `timesfm25_14` is +0.0263 (+0.0077 to +0.0460). Chronos-2 is ahead of TimesFM: `chronos2_84` against `timesfm25_84` is -0.0737 (-0.1019 to -0.0446), and Chronos-2 is lower in all seven zones. Both are ahead of `mstl_182`, which reads the same input: `mstl_182` is +0.1349 (+0.0975 to +0.1798) against `chronos2_84` and +0.0612 (+0.0176 to +0.1133) against `timesfm25_84`.
+- What the numbers do not show: The three longer contexts are a tie inside the noise for both models. `chronos2_56` is +0.0033 (-0.0025 to +0.0091) and `chronos2_28` is +0.0065 (-0.0073 to +0.0215). `timesfm25_56` is +0.0064 (-0.0030 to +0.0158) and `timesfm25_28` is +0.0106 (-0.0010 to +0.0228). Chronos-2 against the frozen LightGBM setting is not settled either: `lgbm_load_826_slow` is -0.0239 (-0.0546 to +0.0038) against `chronos2_84`, so LightGBM is ahead in the mean and the interval holds zero. So the freeze means that the rule picks these settings. It does not mean that 84 days are shown to be better than 56 or 28.
+- A finding to keep in view: Both winners are the longest candidate, and the mean falls with every longer context. The best context may lie above 84 days. It was not tried, because one entry must fit both tables (entry 94).
+- Checks: The MAE and the relative MAE of all 70 new rows were computed again from the forecast files with plain pandas, with no difference to the saved rows. The 70 forecast files passed 13 checks each: one value per market time unit, no empty cell, 60 days per zone, the actual prices equal to the processed tables, and no forecast equal to its actual price. For each frozen setting three validation days were forecast again and equal the saved files exactly. With every price from the delivery day on replaced by noise the forecasts did not change by one value. The lowest relative MAE of any zone is 0.4950, and no mean is below 0.42, so nothing started a search for leakage.
+- Cost: The eight commands took 711 seconds in all, about 12 minutes. The highest peak memory was 1028 MB for Chronos-2 and 2173 MB for TimesFM. Everything ran on the CPU.
+- Alternatives rejected: A shorter context from the tie, which would be cheaper. The rule was fixed before the runs, and changing it afterwards would be a choice made with the results in hand. A setting per zone, although the zones disagree: `timesfm25_14` is the best TimesFM setting in SE_1 and SE_2. One setting serves all zones (entry 59).
+- Limits: Eight settings were compared on the same 60 days of one summer, so the two means are somewhat optimistic. The bootstrap treats the days as independent, so its intervals are likely too narrow. The models read the price only. The forecast is a median (entry 95). The run times are noisy, because other processes ran on the machine.
+
+## 99. Experiment Q runs the two frozen zero-shot settings only
+- Date: 2026-11-27, a step that the owner's prompt asked for. It was run after the freeze
+- Decision: `chronos2_84` and `timesfm25_84` were each scored once on the validation days of experiment Q, with the same config entries. No other zero-shot candidate was run on experiment Q. On the 15-minute table the context of 84 days is 8064 quarter-hours.
+- Result: 60 validation days, 5760 quarter-hours per zone, every check passed in all seven zones for both models. The table is the one that `python -m epf.evaluation.tables --experiment Q --split validation` prints. Run time is the sum of the seven day loops in seconds. The Chronos-2 command took 162 seconds from start to end and the TimesFM command 394 seconds.
+
+| Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean | Run time |
+|---|---|---|---|---|---|---|---|---|---|
+| `lgbm_load_826_slow` | 0.5304 | 0.5784 | 0.6227 | 0.6911 | 0.6059 | 0.5040 | 0.5152 | 0.5782 | 215.3 |
+| `chronos2_84` | 0.6147 | 0.5272 | 0.5860 | 0.6436 | 0.6478 | 0.5550 | 0.5115 | 0.5837 | 157.6 |
+| `timesfm25_84` | 0.6820 | 0.6716 | 0.6992 | 0.6544 | 0.6268 | 0.6172 | 0.5568 | 0.6440 | 389.0 |
+| `mstl_182` | 0.6611 | 0.6528 | 0.7160 | 0.7267 | 0.6682 | 0.6617 | 0.6955 | 0.6831 | 10603.2 |
+| `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0 |
+
+- Reading: Chronos-2 has 0.5837 against 0.5551 on experiment H, and it is worse in every zone. TimesFM has 0.6440 against 0.6298. It is worse in five zones and better in SE_1 and SE_2. On these days Chronos-2 is 0.0055 behind the frozen LightGBM setting in the mean. It is below LightGBM in FR, ES, SE_1 and SE_4.
+- Reason: One setting per model (entry 59), chosen on experiment H (entry 97). The statistical baseline and LightGBM were handled the same way (entries 66 and 89).
+- Alternative rejected: A second comparison on experiment Q with its own winner. It would give each model two settings.
+- Checks: The 14 forecast files passed the 13 checks of entry 98. A fresh forecast of the first validation day of the first zone equals the saved file exactly for both models. Both results files only grew, by 14 and 840 lines.
+- Limits: The settings were not tuned on the 15-minute prices. Why the Q values are worse was not measured. No bootstrap was run on experiment Q, so the gap of 0.0055 to LightGBM has no interval.
+
+## 100. The assumptions behind the zero-shot comparison
+- Date: 2026-11-27, collected after the runs. Proposed, not yet decided by the owner
+- Decision: The assumptions of entries 92 to 99 are listed here in one place, each with how sure it is and what follows if it is wrong. Three of them matter most. They are marked "open" and have a plan.
+- Data. The prices through the end of D-1 are known when D is forecast, because D-1 was cleared on D-2 (PROJECT_CONTEXT §5). Sure. The price series have no empty value on either table. Sure: the wrappers stop on an empty price, and no run stopped. The weights hold no price of a scored day. Sure: the two model repos were last changed on 2026-06-05 and on 2025-10-02, and the first validation day is 2026-06-23.
+- Data, open: Whether the models were trained on European electricity prices of earlier years is not known. If they were, "zero-shot" is weaker than the word says, although the scored days stay unseen. Plan: read the training data that the two model papers name, and state it in the M3 report.
+- Definitions. A context is given in days and counted in market time units (entry 94). The point forecast is the median of each model (entry 95). One setting serves all seven zones and both tables, and it is chosen on experiment H (entry 97). Both models get the same four candidates. The mean over the seven zones counts the near-duplicate zones SE_1 and SE_2 as two (entry 48). Each of these is a choice, not a fact, and each has its rejected alternative in its entry.
+- Statistics, open: 60 days of one summer stand for the model's accuracy. This is the weakest assumption. The naive forecast was much worse in the autumn (entries 67 and 90), and the order of Chronos-2 and LightGBM is not settled even on these days. Plan: the test run of the two frozen settings, which needs the owner's yes, and the Diebold-Mariano test of M3.
+- Statistics, open: The best context is among the four candidates. Both winners are the longest one, so this may be wrong. What speaks for a small loss: from 28 to 84 days the mean changes by 0.0065 for Chronos-2 and by 0.0102 for TimesFM, inside the noise. Plan: ask the owner whether a longer context may be tried on experiment H, where Chronos-2 can read up to 341 days. It would be a setting that does not fit the 15-minute table.
+- Statistics. The bootstrap treats the days as independent, so its intervals are likely too narrow. Picking the best of four settings on the same days makes the value of the winner a little optimistic.
+- Technical. A forecast is the same on every run: measured on three validation days per model, on this machine and with these versions. The options of TimesFM are those of the example of its model card and were not tuned (entry 96). The packages that came with the three pins are not pinned (entry 92). The pinned commits stay on the Hugging Face hub. A run on a GPU gives the same forecasts as the CPU. The last two were not measured.
+- Reason: The assumptions were spread over eight entries. A reader of the results needs the weak ones in one place.
+- Alternative rejected: A separate assumptions file. The owner asked for entries here.

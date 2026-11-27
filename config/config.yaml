@@ -153,8 +153,8 @@ foundation_models:
   timesfm25:
     model_id: google/timesfm-2.5-200m-pytorch
     revision: 1d952420fba87f3c6dee4f240de0f1a0fbc790e3
-    # torch.compile needs a C++ compiler. This laptop has none, and with true the first
-    # forecast ends with "Compiler: cl is not found".
+    # torch.compile needs a C++ compiler. torch finds none on this laptop, and with true the
+    # first forecast ends with "Compiler: cl is not found".
     torch_compile: false
     # Options of timesfm.ForecastConfig. They are fixed and were not tuned.
     max_horizon: 128              # one output patch of the model. The longest day has 100 quarter-hours.

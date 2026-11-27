@@ -32,7 +32,7 @@ python3.12 -m venv .venv
 
 On Linux or macOS, use `.venv/bin/python` in the second command.
 
-The second command also installs the project's own package, `src/epf`, in editable mode.
+The second command also installs the project's own package, `src/epf`, in editable mode. It installs `torch` too, which runs the two foundation models. On Windows the wheel from PyPI is the CPU build.
 
 Run the tests with `.venv\Scripts\python -m pytest`. They use no network and no data files, and take about 70 seconds.
 
@@ -298,10 +298,60 @@ Means over the seven zones on the 60 validation days:
 
 The intervals are too narrow in every zone and on both experiments: the 90% interval holds about 75% of the prices on H and about 73% on Q. They are reported as they are and were not widened. The values per zone are in DECISIONS entry 91.
 
+## Zero-shot foundation models
+
+Chronos-2 (`amazon/chronos-2`) and TimesFM 2.5 (`google/timesfm-2.5-200m-pytorch`) run zero-shot through the same backtest. Nothing is fitted on the prices of the project. The frozen settings are `chronos2_84` and `timesfm25_84`. The config names them under `backtest.chronos2_model` and `backtest.timesfm25_model`.
+
+```
+.venv\Scripts\python -m epf.evaluation.backtest --model chronos2_84 --split validation
+.venv\Scripts\python -m epf.evaluation.backtest --model timesfm25_84 --split validation
+```
+
+- Both read the price history only: the prices of the last 84 days before the delivery day. That is 2016 hours on experiment H and 8064 quarter-hours on experiment Q. They use no calendar and no load, wind, solar or weather input, and each zone is forecast alone.
+- The forecast has one value per market time unit of the delivery day. It is the median of the model, its 0.5 quantile (DECISIONS entry 95).
+- The model ID and the pinned Hugging Face revision of each model are in `config/config.yaml` under `foundation_models`, and they are copied into every results row. The first run downloads the weights, 478 MB and 925 MB, to the Hugging Face cache of the user, so it needs the network.
+- TimesFM runs with `infer_is_positive: false`. With true it would cut a forecast at 0, and prices go negative (DECISIONS entry 96).
+- Both run on the CPU. On the validation days `chronos2_84` takes about 1 minute on experiment H and about 3 minutes on experiment Q, and `timesfm25_84` about 3 and about 7 minutes.
+
+How they were chosen:
+
+- Four context lengths ran per model: 14, 28, 56 and 84 days, as the entries `chronos2_14` to `chronos2_84` and `timesfm25_14` to `timesfm25_84`. All eight ran on the 60 validation days of experiment H for all seven zones. For each model the setting with the lowest mean relative MAE won. The rule was fixed and committed before the runs (DECISIONS entries 97 and 98).
+- For both models the three longer contexts are a tie inside the noise of 60 days, and 14 days are clearly worse. Both winners are the longest candidate. A longer context was not tried, because 84 days are the most that fits Chronos-2 on the 15-minute table.
+- The rows of all eight settings are in `backtest_core.csv`. Every table, the run times and the checks are in [docs/MODEL_NOTES.md](docs/MODEL_NOTES.md), "Chronos-2 zero-shot" and "TimesFM 2.5 zero-shot".
+
+Relative MAE on the 60 validation days, from the table command. The naive forecast is the reference, so its value is 1.
+
+| Experiment | Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|---|
+| H | `lgbm_load_826_slow` | 0.4909 | 0.5548 | 0.5707 | 0.6235 | 0.5122 | 0.4890 | 0.4797 | 0.5316 |
+| H | `chronos2_84` | 0.5874 | 0.5071 | 0.5463 | 0.6217 | 0.5893 | 0.5335 | 0.5006 | 0.5551 |
+| H | `timesfm25_84` | 0.6398 | 0.6308 | 0.6763 | 0.6796 | 0.6525 | 0.5787 | 0.5508 | 0.6298 |
+| H | `mstl_182` | 0.7106 | 0.6521 | 0.7165 | 0.7317 | 0.6666 | 0.6596 | 0.6837 | 0.6887 |
+| H | `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| Q | `lgbm_load_826_slow` | 0.5304 | 0.5784 | 0.6227 | 0.6911 | 0.6059 | 0.5040 | 0.5152 | 0.5782 |
+| Q | `chronos2_84` | 0.6147 | 0.5272 | 0.5860 | 0.6436 | 0.6478 | 0.5550 | 0.5115 | 0.5837 |
+| Q | `timesfm25_84` | 0.6820 | 0.6716 | 0.6992 | 0.6544 | 0.6268 | 0.6172 | 0.5568 | 0.6440 |
+| Q | `mstl_182` | 0.6611 | 0.6528 | 0.7160 | 0.7267 | 0.6682 | 0.6617 | 0.6955 | 0.6831 |
+| Q | `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+- Chronos-2 and TimesFM read the same input as `mstl_182`, the price history, and both are clearly ahead of it on experiment H.
+- Chronos-2 is clearly ahead of TimesFM, in all seven zones on experiment H.
+- Chronos-2 against the LightGBM model is not settled on these 60 days. LightGBM also reads the load, wind and solar forecasts and is ahead in the mean, but the bootstrap interval of the difference holds zero. Chronos-2 is lower in FR, ES and SE_1 on experiment H.
+- SE1 and SE2 are near-duplicates.
+- Neither zero-shot model has been scored on the test days. `--split test` is refused for all eight settings.
+
+This prints how firm each choice is:
+
+```
+.venv\Scripts\python -m epf.evaluation.firmness --winner chronos2_84 --models chronos2_84 chronos2_56 chronos2_28 chronos2_14 lgbm_load_826_slow mstl_182 --without SE_2
+.venv\Scripts\python -m epf.evaluation.firmness --winner timesfm25_84 --models timesfm25_84 timesfm25_56 timesfm25_28 timesfm25_14 chronos2_84 mstl_182 --without SE_2
+```
+
 ## Environment
 
 - Python 3.12.10, venv + pip, pinned `requirements.txt`.
 - Hardware: laptop, Lenovo 21RVCTO1WW, AMD Ryzen AI 9 HX PRO 370 with 12 cores and 24 threads, 59.6 GB RAM, AMD Radeon 890M integrated graphics, Windows 11 (10.0.26200). The backtest runs on the CPU. No GPU run has been made yet.
+- Chronos-2 and TimesFM 2.5 run on `torch` 2.15.0+cpu with 12 threads, through `chronos-forecasting` 2.3.2 and `timesfm` 3.0.2. `torch.compile` is off for TimesFM, because torch finds no C++ compiler on this laptop. The peak memory of a run was about 1 GB for Chronos-2 and about 2.2 GB for TimesFM.
 - Every backtest command imports `lightgbm` 4.7.0, also a run of the naive forecast. On 26 Nov 2026 `import lightgbm` failed on this machine while an installer was replacing the Microsoft Visual C++ runtime, and worked again when the installer had finished.
 - The backtest reads its peak memory on Windows only. On Linux or macOS the `peak_memory_mb` column stays empty (DECISIONS entry 55). The backtest has not been run on such a machine yet.
 

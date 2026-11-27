@@ -1047,7 +1047,7 @@ Each cut was moved on purpose once, the tests were run, and the code was put bac
 
 ## LightGBM
 
-Trained, compared, frozen and scored on 26 Nov 2026 (DECISIONS entries 82 to 91). The model is `src/epf/models/lgbm.py`. It reads the features of the section before this one and runs through the same backtest as the naive forecast and the statistical models. The results rows are in `reports/results/backtest_core.csv` (252 rows now), the losses per delivery day in `daily_core.csv` (16380 rows) and the quantile scores in `quantile_core.csv` (14 rows).
+Trained, compared, frozen and scored on 26 Nov 2026 (DECISIONS entries 82 to 91). The model is `src/epf/models/lgbm.py`. It reads the features of the section before this one and runs through the same backtest as the naive forecast and the statistical models. The results rows are in `reports/results/backtest_core.csv` (252 rows after this work), the losses per delivery day in `daily_core.csv` (16380 rows) and the quantile scores in `quantile_core.csv` (14 rows).
 
 Two limits of the Swedish data hold for every table of this section. SE_4 has no usable solar forecast, and the three solar features are empty in SE_1 to SE_4. SE_1 and SE_2 are near-duplicates (DECISIONS entry 48), so the seven zones are not seven independent results.
 
@@ -1739,3 +1739,825 @@ The commits behind the numbers of this section, of 26 and 27 Nov 2026:
 | `4ad9a9c` | the firmness command |
 | `bbb2211` | the quantile model and the quantile command |
 | `8cbafbc` | the quantile rows |
+
+## Chronos-2 zero-shot
+
+Wrapped, compared, frozen and scored on the validation days on 27 Nov 2026 (DECISIONS entries 92 to 100, proposed). The model is `src/epf/models/chronos2.py`. It reads the price history only and runs through the same backtest as the other models. Nothing is fitted on the prices of the project. After this work `reports/results/backtest_core.csv` holds 322 rows and `daily_core.csv` holds 20580.
+
+No setting of this section was scored on the test days. SE_1 and SE_2 are near-duplicates (DECISIONS entry 48), so the seven zones are not seven independent results.
+
+### In short
+
+- The frozen setting is `chronos2_84`: `amazon/chronos-2` at the commit `29ec3766d36d6f73f0696f85560a422f50e8498c`, with the prices of the last 84 days as context. That is 2016 hours on the hourly table and 8064 quarter-hours on the 15-minute table.
+- It was chosen from four context lengths: 14, 28, 56 and 84 days. All four ran on the 60 validation days of experiment H for all seven zones. The rule was fixed and committed before the runs: the lowest mean relative MAE over the seven zones wins (entry 97).
+- The three longer contexts are a tie inside the noise of 60 days: 0.5551, 0.5584 and 0.5616. 14 days are clearly worse with 0.5946. The winner is the longest candidate, so the best length may lie above 84 days.
+- Mean relative MAE over the seven zones: 0.5551 on validation H and 0.5837 on validation Q. On the same days `lgbm_load_826_slow` has 0.5316 and 0.5782, and `mstl_182` has 0.6887 and 0.6831.
+- Chronos-2 reads prices only and is clearly ahead of `mstl_182`, which also reads prices only. Against the frozen LightGBM setting, which also reads the load, wind and solar forecasts, the gap is not settled on these 60 days: the bootstrap interval of the difference reaches from -0.0546 to +0.0038.
+- Time on the CPU: the four runs on experiment H took 205 seconds from start to end, and the run on experiment Q took 162 seconds. A forecast takes 0.075 to 0.140 seconds on the hourly table and 0.375 seconds on the 15-minute table. The peak memory was 1028 MB.
+
+### 1. How a forecast is made
+
+**The library.** `chronos-forecasting` 2.3.2 on `torch` 2.15.0+cpu, both pinned in `requirements.txt` (entry 92). `transformers` 5.24.1, `huggingface_hub` 2.5.0 and `accelerate` 1.16.0 came with them and are not pinned.
+
+**The model.** `amazon/chronos-2`, 478 MB of weights. The config pins the commit under `foundation_models.chronos2` (entry 93). The model repo was last changed on 2026-06-05, before the first validation day, so the weights hold no price of a scored day.
+
+**What the model receives.** The backtest hands the wrapper the inputs of delivery day D. The wrapper reads two things: the prices, which end before 00:00 market time on D, and the market time units of D. It reads no other column and no file.
+
+**The context.** `price_context` in `src/epf/models/zero_shot.py` takes the last `context_days` times 24 hourly or 96 quarter-hour prices, oldest first (entry 94). The count is in market time units, not in clock time. A context with an empty price stops the run. The processed tables have no empty price, so this never happened.
+
+**The forecast.** One call of `predict_quantiles` per zone and delivery day, with one series, the context length, and the number of market time units of D as the horizon: 24 hours or 96 quarter-hours on the validation days. The point forecast is the 0.5 quantile, the median (entry 95). The model scales the context itself. Nothing is scaled, filled or cut by the wrapper.
+
+**Fit.** `fit` loads the weights the first time it is called and estimates nothing. The backtest still calls it on the first scored day and every 7th day, as for every model.
+
+**The seed.** The seed of the project, 42, goes to `torch.manual_seed` when the weights are loaded. It changes nothing: the model gave the same forecast under two torch seeds.
+
+### 2. What the code relies on in `chronos-forecasting` 2.3.2
+
+Checked on 27 Nov 2026 before the wrapper was written, against the installed source, the model card and the loaded model.
+
+| Fact | Evidence | What the code does with it |
+|---|---|---|
+| The model card gives a context of 8192 steps and a horizon of 1024 | The loaded model printed `context_length 8192`, `prediction_length 1024`, 64 output patches of 16 steps | Every candidate fits: the longest context is 8064 steps and the longest horizon 100 |
+| A context length above the limit is shortened, with a warning only | Source of `Chronos2Pipeline.predict` | The wrapper reads `model_context_length` and stops the run instead |
+| `from_pretrained` takes a revision and a device | Loaded with the commit and `device_map="cpu"`, the model printed `device cpu` | `load_pipeline` hands over both from the config |
+| `predict_quantiles` answers per series with (variates, steps, levels) and with a "mean" of (variates, steps) | Printed shapes `(1, 25, 1)` and `(1, 25)` for a horizon of 25 | The wrapper takes variate 0 and level 0 of the first answer |
+| The "mean" is the median | The source says "the median is returned as the mean here", and a check printed that both are equal | The wrapper asks for the level 0.5 and names it the median |
+| The model has 21 quantile levels, 0.01 to 0.99 | Printed from the loaded model | The level 0.5 is one of them, so nothing is interpolated |
+| A forecast draws no random number | The same forecast under `torch.manual_seed(1)` and `(2)` | The seed is set once and does not matter |
+| A negative forecast needs no setting | A sine between -35 and 25 gave a lowest forecast of -34.40 | No option is set |
+| `lightgbm` and torch run in one process | A LightGBM fit, a Chronos-2 forecast and a second LightGBM fit ran without an error | The backtest module imports both model families |
+
+### 3. Timing before the runs
+
+Timed on 27 Nov 2026 on train days only, for both models, at the shortest and the longest candidate. The script printed seconds, the number of values and memory, and no error measure. "First call" holds the loading of the weights where a model was loaded for the first time. Both models ran in one process here, so the peak memory rows are not those of one model.
+
+```
+zone DE_LU days ['2026-06-20', '2026-06-21', '2026-06-22'] torch threads 12
+AMD64 Family 26 Model 36 Stepping 0, AuthenticAMD | 12 cores, 24 threads | 59.6 GB RAM | Windows 11
+chronos2   context  14 days  H  first call   3.6 s  3 days   0.20 s  per forecast  0.067 s  values 72  peak 982 MB
+chronos2   context  14 days  Q  first call   0.1 s  3 days   0.30 s  per forecast  0.101 s  values 288  peak 986 MB
+chronos2   context  84 days  H  first call   0.6 s  3 days   0.40 s  per forecast  0.132 s  values 72  peak 1021 MB
+chronos2   context  84 days  Q  first call   0.4 s  3 days   1.05 s  per forecast  0.351 s  values 288  peak 1034 MB
+timesfm25  context  14 days  H  first call   1.3 s  3 days   0.66 s  per forecast  0.219 s  values 72  peak 2335 MB
+timesfm25  context  14 days  Q  first call   0.3 s  3 days   1.04 s  per forecast  0.347 s  values 288  peak 2335 MB
+timesfm25  context  84 days  H  first call   1.7 s  3 days   1.12 s  per forecast  0.372 s  values 72  peak 3265 MB
+timesfm25  context  84 days  Q  first call   0.9 s  3 days   2.82 s  per forecast  0.940 s  values 288  peak 3265 MB
+projection: 420 forecasts per run (7 zones, 60 days)
+chronos2   H   14 days     0.5 min
+chronos2   H   28 days     0.6 min
+chronos2   H   56 days     0.7 min
+chronos2   H   84 days     0.9 min
+chronos2   Q  frozen setting, at most (84 days)     2.5 min
+timesfm25  H   14 days     1.5 min
+timesfm25  H   28 days     1.7 min
+timesfm25  H   56 days     2.2 min
+timesfm25  H   84 days     2.6 min
+timesfm25  Q  frozen setting, at most (84 days)     6.6 min
+whole comparison, 8 runs on H and 2 on Q: 20 min = 0.33 hours
+```
+
+The projection of 20 minutes is far below the limit of 4 hours that the owner set for the comparison.
+
+### 4. The four settings
+
+| Name | Context days | Hours of context | Quarter-hours of context | Weekly seasons in the context |
+|---|---|---|---|---|
+| `chronos2_14` | 14 | 336 | 1344 | 2 |
+| `chronos2_28` | 28 | 672 | 2688 | 4 |
+| `chronos2_56` | 56 | 1344 | 5376 | 8 |
+| `chronos2_84` | 84 | 2016 | 8064 | 12 |
+
+- Each setting is an entry under `models` in `config/config.yaml`. The entry and the section `foundation_models.chronos2` are copied into every results row.
+- The seasons of the price were measured on train days for the statistical baseline (section 2 of that part). The daily season is the strong one and the weekly season is weaker. A context should hold the longest season at least twice, so the shortest candidate is two weeks. All four are whole weeks.
+- 84 days are 8064 quarter-hours, the most whole weeks inside the 8192 steps of the model. The same entry must fit both tables (entry 94).
+
+### 5. The rule
+
+Fixed and committed before the runs (entry 97, commit `95b65b6`), in the words of the earlier freezes: the winner is the setting with the lowest mean relative MAE over the seven zones on the validation days of experiment H, among the settings whose run passes every check. Run time is reported and does not decide. The four candidates of a model compete with each other. A mean clearly below 0.42 would start a search for leakage before anything else. Two settings with the same mean to four decimals: the shorter context wins.
+
+### 6. Validation results, experiment H
+
+60 validation days, 2026-06-23 to 2026-08-21, 1440 hours per zone. Runs of 27 Nov 2026 on the machine of the other models: `AMD64 Family 26 Model 36 Stepping 0, AuthenticAMD | 12 cores, 24 threads | 59.6 GB RAM | Windows 11`, on the CPU with 12 torch threads. Python 3.12.10, seed 42. Every run ended with exit code 0 and passed its four checks in all seven zones.
+
+The table of every model, as `python -m epf.evaluation.tables --experiment H --split validation` prints it:
+
+```
+Relative MAE, experiment H, validation days, core zones
+
+| Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|
+| lgbm_load_826_slow | 0.4909 | 0.5548 | 0.5707 | 0.6235 | 0.5122 | 0.4890 | 0.4797 | 0.5316 |
+| lgbm_load_826 | 0.5073 | 0.5625 | 0.5674 | 0.6271 | 0.5160 | 0.4881 | 0.4832 | 0.5359 |
+| lgbm_load_826_l1 | 0.5125 | 0.5498 | 0.5855 | 0.5816 | 0.5477 | 0.5018 | 0.4861 | 0.5379 |
+| lgbm_all | 0.5725 | 0.5940 | 0.5813 | 0.5557 | 0.4891 | 0.5053 | 0.4884 | 0.5409 |
+| lgbm_all_826 | 0.5229 | 0.5697 | 0.5803 | 0.6417 | 0.5084 | 0.4851 | 0.4927 | 0.5430 |
+| lgbm_fcst | 0.5741 | 0.6002 | 0.5936 | 0.5776 | 0.5022 | 0.5236 | 0.5062 | 0.5539 |
+| lgbm_load | 0.5724 | 0.5962 | 0.5912 | 0.5834 | 0.4970 | 0.5254 | 0.5127 | 0.5540 |
+| chronos2_84 | 0.5874 | 0.5071 | 0.5463 | 0.6217 | 0.5893 | 0.5335 | 0.5006 | 0.5551 |
+| lgbm_load_826_leaves15 | 0.5362 | 0.5724 | 0.5900 | 0.6282 | 0.5411 | 0.5050 | 0.5193 | 0.5560 |
+| chronos2_56 | 0.5859 | 0.5118 | 0.5519 | 0.6147 | 0.5912 | 0.5404 | 0.5129 | 0.5584 |
+| chronos2_28 | 0.6080 | 0.5234 | 0.5527 | 0.6176 | 0.5995 | 0.5350 | 0.4950 | 0.5616 |
+| lgbm_load_364 | 0.5312 | 0.5559 | 0.5851 | 0.6734 | 0.5751 | 0.5002 | 0.5148 | 0.5622 |
+| lgbm_all_364 | 0.5410 | 0.5643 | 0.5816 | 0.6578 | 0.5871 | 0.5246 | 0.5024 | 0.5655 |
+| chronos2_14 | 0.6292 | 0.5681 | 0.6246 | 0.6376 | 0.6145 | 0.5497 | 0.5383 | 0.5946 |
+| timesfm25_84 | 0.6398 | 0.6308 | 0.6763 | 0.6796 | 0.6525 | 0.5787 | 0.5508 | 0.6298 |
+| timesfm25_56 | 0.6571 | 0.6119 | 0.6806 | 0.6999 | 0.6580 | 0.5881 | 0.5563 | 0.6360 |
+| timesfm25_28 | 0.6494 | 0.6129 | 0.6830 | 0.7128 | 0.6517 | 0.6056 | 0.5646 | 0.6400 |
+| timesfm25_14 | 0.7126 | 0.6353 | 0.6908 | 0.6731 | 0.6417 | 0.6279 | 0.6092 | 0.6558 |
+| lgbm_price | 0.7064 | 0.6547 | 0.7248 | 0.6277 | 0.5887 | 0.6617 | 0.6340 | 0.6569 |
+| mstl_182 | 0.7106 | 0.6521 | 0.7165 | 0.7317 | 0.6666 | 0.6596 | 0.6837 | 0.6887 |
+| mstl_364 | 0.7106 | 0.6520 | 0.7165 | 0.7373 | 0.6706 | 0.6596 | 0.6838 | 0.6901 |
+| mstl_91 | 0.7133 | 0.6538 | 0.7161 | 0.7382 | 0.6647 | 0.6612 | 0.6839 | 0.6902 |
+| mstl_56 | 0.7358 | 0.6686 | 0.7208 | 0.7645 | 0.6931 | 0.6771 | 0.6900 | 0.7071 |
+| arima_28 | 0.7805 | 0.7380 | 0.8053 | 0.6925 | 0.6529 | 0.6711 | 0.6870 | 0.7182 |
+| arima_small_28 | 0.7917 | 0.7353 | 0.8808 | 0.6527 | 0.6511 | 0.6806 | 0.6763 | 0.7241 |
+| arima_small_56 | 0.7844 | 0.7321 | 0.8697 | 0.6961 | 0.6434 | 0.6793 | 0.6830 | 0.7269 |
+| arima_small_91 | 0.8106 | 0.7786 | 0.8601 | 0.6550 | 0.6599 | 0.6691 | 0.6804 | 0.7305 |
+| mstl_28 | 0.7764 | 0.6997 | 0.7378 | 0.8319 | 0.7824 | 0.6920 | 0.7020 | 0.7460 |
+| ets_56 | 0.9255 | 0.7698 | 0.8481 | 0.6952 | 0.6586 | 0.6752 | 0.6868 | 0.7513 |
+| ets_28 | 0.9607 | 0.7739 | 0.8522 | 0.6903 | 0.6693 | 0.6712 | 0.6934 | 0.7587 |
+| ets_91 | 0.9894 | 0.7783 | 0.8419 | 0.6767 | 0.6539 | 0.6810 | 0.6960 | 0.7596 |
+| ets_182 | 0.9674 | 0.7925 | 0.8538 | 0.6754 | 0.6657 | 0.7064 | 0.7547 | 0.7737 |
+| ets_364 | 1.0155 | 0.8010 | 0.8646 | 0.6775 | 0.6668 | 0.6910 | 0.7520 | 0.7812 |
+| naive | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| ets_auto_56 | 1.5910 | 1.5868 | 1.2686 | 0.7314 | 0.6902 | 0.8390 | 0.9348 | 1.0917 |
+```
+
+The four settings. The MAE and the RMSE are means over the seven zones in EUR/MWh. "Day loops" is the sum of `wall_seconds` over the seven zones. The first of them holds the loading of the weights.
+
+| Setting | Context days | Context steps | Run started (UTC) | Mean relative MAE | Mean MAE | Mean RMSE | Day loops, sum (s) | Seconds per forecast | Peak memory (MB) |
+|---|---|---|---|---|---|---|---|---|---|
+| `chronos2_14` | 14 | 336 | 2026-11-27T04:30:23Z | 0.5946 | 17.38 | 27.79 | 31.4 | 0.075 | 1024 |
+| `chronos2_28` | 28 | 672 | 2026-11-27T04:31:00Z | 0.5616 | 16.36 | 26.14 | 39.9 | 0.095 | 1020 |
+| `chronos2_56` | 56 | 1344 | 2026-11-27T04:31:46Z | 0.5584 | 16.30 | 25.96 | 50.4 | 0.120 | 1025 |
+| `chronos2_84` | 84 | 2016 | 2026-11-27T04:32:43Z | 0.5551 | 16.17 | 25.82 | 58.7 | 0.140 | 1028 |
+
+By the rule the winner is `chronos2_84` with a mean of 0.5551.
+
+`chronos2_84` per zone:
+
+| Zone | Relative MAE | MAE | RMSE | Naive MAE | Day loop (s) | Peak memory (MB) | Market time units |
+|---|---|---|---|---|---|---|---|
+| DE_LU | 0.5874 | 20.55 | 36.94 | 34.98 | 12.1 | 1008 | 1440 |
+| FR | 0.5071 | 17.29 | 25.45 | 34.09 | 7.8 | 1014 | 1440 |
+| ES | 0.5463 | 13.26 | 19.50 | 24.28 | 7.9 | 1019 | 1440 |
+| SE_1 | 0.6217 | 11.46 | 19.79 | 18.44 | 7.9 | 1022 | 1440 |
+| SE_2 | 0.5893 | 11.77 | 19.61 | 19.98 | 7.7 | 1024 | 1440 |
+| SE_3 | 0.5335 | 15.98 | 23.04 | 29.96 | 7.7 | 1026 | 1440 |
+| SE_4 | 0.5006 | 22.89 | 36.39 | 45.72 | 7.6 | 1028 | 1440 |
+| Mean | 0.5551 | 16.17 | 25.82 | 29.63 |  |  |  |
+
+### 7. How firm the choice is
+
+The output of `python -m epf.evaluation.firmness --winner chronos2_84 --models chronos2_84 chronos2_56 chronos2_28 chronos2_14 lgbm_load_826_slow mstl_182 --without SE_2`, printed on 27 Nov 2026:
+
+```
+Experiment H, validation days 2026-06-23 to 2026-08-21, zones ['DE_LU', 'FR', 'ES', 'SE_1', 'SE_2', 'SE_3', 'SE_4']
+
+1. Recompute from the forecast files, without the harness metrics
+   42 model and zone pairs. Largest relative difference of MAE and relative MAE to the saved rows: 0.0e+00
+   forecasts outside the validation days or not 1440 per zone: 0. Actual prices that differ from the processed table: 0. Empty forecasts: 0
+   (these three counts are over the files of the given models and of naive)
+   mean of the daily MAE values, weighted by their market time units, against the pooled MAE, largest relative difference: 3.6e-16. Days per model and zone: [60]
+   largest difference of one daily MAE in the daily file to the forecast files: 0.0e+00 EUR/MWh
+
+2. Mean relative MAE over the 7 zones, by half of the days
+                    first 30 days  last 30 days  all 60 days
+lgbm_load_826_slow         0.5375        0.5365       0.5316
+chronos2_84                0.5728        0.5446       0.5551
+chronos2_56                0.5737        0.5502       0.5584
+chronos2_28                0.5686        0.5627       0.5616
+chronos2_14                0.6080        0.5891       0.5946
+mstl_182                   0.7135        0.6694       0.6887
+
+3. How often is each model the best of the 6 in a zone, and its median and mean over the zones
+                    zones won  median over zones   mean
+lgbm_load_826_slow          4             0.5122 0.5316
+chronos2_84                 2             0.5463 0.5551
+chronos2_56                 1             0.5519 0.5584
+chronos2_28                 0             0.5527 0.5616
+chronos2_14                 0             0.6145 0.5946
+mstl_182                    0             0.6837 0.6887
+   best model per zone: {'DE_LU': 'lgbm_load_826_slow', 'FR': 'chronos2_84', 'ES': 'chronos2_84', 'SE_1': 'chronos2_56', 'SE_2': 'lgbm_load_826_slow', 'SE_3': 'lgbm_load_826_slow', 'SE_4': 'lgbm_load_826_slow'}
+
+4. Bootstrap over the 60 days (2000 resamples of whole days, seed 42):
+   difference in mean relative MAE over the 7 zones, other model minus chronos2_84
+   lgbm_load_826_slow  mean -0.0239   95% interval -0.0546 to +0.0038   share of resamples where chronos2_84 is better: 5.0%
+   chronos2_56         mean +0.0033   95% interval -0.0025 to +0.0091   share of resamples where chronos2_84 is better: 85.6%
+   chronos2_28         mean +0.0065   95% interval -0.0073 to +0.0215   share of resamples where chronos2_84 is better: 83.1%
+   chronos2_14         mean +0.0395   95% interval +0.0161 to +0.0638   share of resamples where chronos2_84 is better: 99.9%
+   mstl_182            mean +0.1349   95% interval +0.0975 to +0.1798   share of resamples where chronos2_84 is better: 100.0%
+
+5. Mean relative MAE over the 6 zones without SE_2
+lgbm_load_826_slow   0.5348
+chronos2_84          0.5494
+chronos2_56          0.5529
+chronos2_28          0.5553
+chronos2_14          0.5913
+mstl_182             0.6924
+
+6a. Relative MAE by hour of the day (Europe/Berlin), mean over the 7 zones
+      lgbm_load_826_slow  chronos2_84  chronos2_56  chronos2_28  chronos2_14  mstl_182
+hour                                                                                  
+0                 0.5150       0.3523       0.3525       0.3489       0.3491    0.4327
+1                 0.5220       0.3841       0.3838       0.3773       0.3778    0.4939
+2                 0.5103       0.3979       0.4000       0.3874       0.4008    0.5307
+3                 0.4925       0.4152       0.4169       0.4051       0.4184    0.5457
+4                 0.4847       0.4363       0.4350       0.4324       0.4481    0.5625
+5                 0.4923       0.4664       0.4662       0.4708       0.4828    0.5663
+6                 0.5329       0.4983       0.4966       0.5075       0.5385    0.5614
+7                 0.5202       0.5143       0.5187       0.5313       0.5720    0.6097
+8                 0.5096       0.5182       0.5227       0.5311       0.5844    0.6252
+9                 0.5179       0.5286       0.5327       0.5373       0.6032    0.6706
+10                0.5549       0.5627       0.5613       0.5661       0.6342    0.7670
+11                0.5555       0.5838       0.5874       0.5968       0.6457    0.8101
+12                0.5873       0.5924       0.5941       0.6086       0.6524    0.8833
+13                0.5888       0.5910       0.5922       0.6071       0.6510    0.9127
+14                0.5661       0.5803       0.5823       0.6020       0.6448    0.8891
+15                0.5517       0.5787       0.5799       0.5877       0.6332    0.8246
+16                0.5453       0.5939       0.5985       0.6009       0.6352    0.7661
+17                0.5203       0.6282       0.6316       0.6335       0.6661    0.7292
+18                0.5066       0.6146       0.6182       0.6169       0.6542    0.6940
+19                0.5182       0.6302       0.6311       0.6317       0.6711    0.7271
+20                0.5339       0.6302       0.6323       0.6312       0.6657    0.7342
+21                0.5674       0.6605       0.6690       0.6601       0.6829    0.7397
+22                0.5910       0.6841       0.6974       0.6903       0.6949    0.7526
+23                0.6378       0.6818       0.7016       0.7000       0.6957    0.7776
+
+6b. Relative MAE of chronos2_84 by hour of the day (Europe/Berlin) and zone
+      DE_LU     FR     ES   SE_1   SE_2   SE_3   SE_4   mean
+hour                                                        
+0    0.4351 0.4120 0.4389 0.3435 0.3087 0.2547 0.2734 0.3523
+1    0.4938 0.4786 0.3493 0.3676 0.3458 0.3212 0.3324 0.3841
+2    0.5143 0.4437 0.3663 0.3921 0.3654 0.3539 0.3499 0.3979
+3    0.5426 0.4162 0.3974 0.4228 0.3988 0.3787 0.3499 0.4152
+4    0.5658 0.4135 0.4102 0.4685 0.4334 0.4025 0.3600 0.4363
+5    0.5575 0.5144 0.3728 0.5277 0.4944 0.4191 0.3790 0.4664
+6    0.5600 0.5979 0.4227 0.5631 0.5335 0.4255 0.3853 0.4983
+7    0.5464 0.5981 0.4625 0.5789 0.5465 0.4572 0.4107 0.5143
+8    0.5975 0.5640 0.4773 0.5731 0.5585 0.4402 0.4168 0.5182
+9    0.6345 0.5019 0.4757 0.5657 0.5245 0.4995 0.4982 0.5286
+10   0.6475 0.4863 0.5494 0.6075 0.5576 0.5494 0.5410 0.5627
+11   0.6655 0.4616 0.6133 0.6338 0.5926 0.5547 0.5651 0.5838
+12   0.6259 0.4748 0.6087 0.6493 0.6421 0.5912 0.5549 0.5924
+13   0.5667 0.4420 0.6262 0.6695 0.6567 0.6177 0.5584 0.5910
+14   0.5305 0.4394 0.6624 0.6857 0.6598 0.5798 0.5046 0.5803
+15   0.4877 0.4401 0.6700 0.7092 0.6856 0.5633 0.4953 0.5787
+16   0.5426 0.4563 0.6646 0.6794 0.6704 0.5979 0.5462 0.5939
+17   0.6258 0.5313 0.7234 0.7130 0.6737 0.5818 0.5487 0.6282
+18   0.6202 0.5615 0.6318 0.7426 0.6713 0.5478 0.5269 0.6146
+19   0.6089 0.5157 0.5424 0.7494 0.6850 0.6935 0.6167 0.6302
+20   0.6125 0.5972 0.4879 0.7301 0.7025 0.6821 0.5994 0.6302
+21   0.5928 0.6213 0.5990 0.7383 0.6796 0.7178 0.6747 0.6605
+22   0.6368 0.6419 0.6104 0.7577 0.7040 0.7374 0.7008 0.6841
+23   0.6448 0.6721 0.5741 0.7508 0.7407 0.6908 0.6992 0.6818
+
+6c. Mean relative MAE over the 7 zones by calendar week (Monday to Sunday)
+            days  lgbm_load_826_slow  chronos2_84  chronos2_56  chronos2_28  chronos2_14  mstl_182
+week from                                                                                         
+2026-06-22     6              0.6621       0.7525       0.7626       0.7774       0.7982    0.9158
+2026-06-29     7              0.5974       0.6831       0.6759       0.6465       0.7020    0.8159
+2026-07-06     7              0.3495       0.3926       0.3963       0.3994       0.4290    0.5112
+2026-07-13     7              0.6023       0.5761       0.5714       0.5688       0.6237    0.7895
+2026-07-20     7              0.6420       0.6083       0.6247       0.6671       0.6774    0.8905
+2026-07-27     7              0.5809       0.6073       0.6099       0.6143       0.6012    0.8294
+2026-08-03     7              0.5356       0.5885       0.5974       0.6293       0.6321    0.7632
+2026-08-10     7              0.4741       0.4426       0.4576       0.4525       0.5089    0.4999
+2026-08-17     5              0.5285       0.5578       0.5573       0.5794       0.5949    0.6011
+
+6d. Days of chronos2_84: delivery days with a daily MAE above naive, and the share of its summed absolute error in its 6 worst days
+       days above naive  of days share in the 6 worst days
+DE_LU                10       60                     27.5%
+FR                   13       60                     19.9%
+ES                   11       60                     21.1%
+SE_1                 13       60                     39.8%
+SE_2                 13       60                     38.6%
+SE_3                 10       60                     22.2%
+SE_4                 10       60                     24.8%
+   daily MAE above naive on 80 of the 420 days of all zones
+```
+
+What it shows:
+
+- **The three longer contexts are a tie.** Against the winner `chronos2_56` is +0.0033 (95% interval -0.0025 to +0.0091) and `chronos2_28` is +0.0065 (-0.0073 to +0.0215). Both intervals hold zero. In the first 30 days `chronos2_28` is the best of the four with 0.5686.
+- **14 days are clearly worse**: +0.0395 (+0.0161 to +0.0638).
+- **The winner is the longest candidate.** The mean falls with every longer context: 0.5946, 0.5616, 0.5584, 0.5551. A longer context was not tried, because 84 days are the most that fits the 15-minute table.
+- **Chronos-2 is clearly ahead of `mstl_182`**: +0.1349 for `mstl_182` (+0.0975 to +0.1798). Both read the price history only.
+- **Chronos-2 against the frozen LightGBM setting is not settled.** `lgbm_load_826_slow` is -0.0239 (-0.0546 to +0.0038), so LightGBM is ahead in the mean and the interval holds zero. LightGBM is the best of the six in DE_LU, SE_2, SE_3 and SE_4, `chronos2_84` in FR and ES, and `chronos2_56` in SE_1.
+- **The two models are good at different hours.** `chronos2_84` has the lower relative MAE in the hours 0 to 7, from 0.3523 at hour 0. `lgbm_load_826_slow` has the lower one in the hours 8 to 23. The first hours of D lie close to the last known price of D-1, and the error of Chronos-2 grows through the day to 0.6841 at hour 22.
+- Without SE_2 the mean of the winner is 0.5494.
+- The winner has a daily MAE above the naive forecast on 80 of the 420 days of all zones. Its 6 worst days hold 19.9% of its error in FR and 39.8% in SE_1.
+
+### 8. Experiment Q, validation
+
+`chronos2_84` with the same config entry, on the 15-minute table. No other Chronos-2 setting ran on experiment Q (entry 99). Every check passed. The command took 162 seconds.
+
+```
+Relative MAE, experiment Q, validation days, core zones
+
+| Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|
+| lgbm_load_826_slow | 0.5304 | 0.5784 | 0.6227 | 0.6911 | 0.6059 | 0.5040 | 0.5152 | 0.5782 |
+| chronos2_84 | 0.6147 | 0.5272 | 0.5860 | 0.6436 | 0.6478 | 0.5550 | 0.5115 | 0.5837 |
+| timesfm25_84 | 0.6820 | 0.6716 | 0.6992 | 0.6544 | 0.6268 | 0.6172 | 0.5568 | 0.6440 |
+| mstl_182 | 0.6611 | 0.6528 | 0.7160 | 0.7267 | 0.6682 | 0.6617 | 0.6955 | 0.6831 |
+| naive | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+```
+
+| Setting | Context days | Context steps | Run started (UTC) | Mean relative MAE | Mean MAE | Mean RMSE | Day loops, sum (s) | Seconds per forecast | Peak memory (MB) |
+|---|---|---|---|---|---|---|---|---|---|
+| `chronos2_84` | 84 | 8064 | 2026-11-27T04:42:58Z | 0.5837 | 17.18 | 28.27 | 157.6 | 0.375 | 1022 |
+
+| Zone | Relative MAE | MAE | RMSE | Naive MAE | Day loop (s) | Peak memory (MB) | Market time units |
+|---|---|---|---|---|---|---|---|
+| DE_LU | 0.6147 | 21.71 | 40.30 | 35.31 | 27.7 | 1008 | 5760 |
+| FR | 0.5272 | 18.36 | 28.55 | 34.83 | 21.9 | 1014 | 5760 |
+| ES | 0.5860 | 14.38 | 21.48 | 24.53 | 21.6 | 1016 | 5760 |
+| SE_1 | 0.6436 | 12.11 | 20.98 | 18.81 | 21.4 | 1017 | 5760 |
+| SE_2 | 0.6478 | 13.16 | 21.83 | 20.32 | 21.8 | 1019 | 5760 |
+| SE_3 | 0.5550 | 16.86 | 25.22 | 30.37 | 21.5 | 1019 | 5760 |
+| SE_4 | 0.5115 | 23.72 | 39.54 | 46.36 | 21.7 | 1022 | 5760 |
+| Mean | 0.5837 | 17.18 | 28.27 | 30.08 |  |  |  |
+
+- The context is 84 days here too, which is 8064 quarter-hours, close to the limit of 8192.
+- The Q values are worse than the H values in every zone: 0.5837 against 0.5551 in the mean. The cause was not measured.
+- `lgbm_load_826_slow` has 0.5782 on these days and `mstl_182` 0.6831. Chronos-2 is below LightGBM in FR, ES, SE_1 and SE_4, and above it in DE_LU, SE_2 and SE_3.
+- The setting was chosen on the hourly table and was not tuned on the 15-minute table.
+
+### 9. Checks
+
+**The runs.** Each of the five runs printed 28 passed checks, 4 for each of the seven zones: the scored days, the market time units, no empty forecast, and every forecast finite.
+
+**The forecast files.** A script outside the repo audited the 35 saved files with plain pandas: the four settings on experiment H and the frozen one on experiment Q. It checks 13 things per file: the two columns, no empty cell, no repeated timestamp, the order, one row per market time unit of the validation days, 60 delivery days, a full count on every day, the actual prices against the processed table, finite forecasts, no forecast equal to its actual price, the MAE and the relative MAE against the saved row, and the counts of the saved row. "Outside train range" counts forecasts below the lowest or above the highest train price of the zone on that table. It is shown for information and is no check.
+
+```
+validation days 2026-06-23 to 2026-08-21, zones ['DE_LU', 'FR', 'ES', 'SE_1', 'SE_2', 'SE_3', 'SE_4']
+chronos2_14   H DE_LU  rows  1440  forecast    -5.62 to   576.26  actual   -12.28 to   665.82  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_14   H FR     rows  1440  forecast    -5.96 to   294.53  actual    -9.75 to   338.86  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_14   H ES     rows  1440  forecast    -8.45 to   227.67  actual    -1.43 to   255.16  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_14   H SE_1   rows  1440  forecast   -33.86 to   128.50  actual   -28.20 to   167.64  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_14   H SE_2   rows  1440  forecast    -2.27 to   122.57  actual    -2.72 to   177.76  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_14   H SE_3   rows  1440  forecast     0.87 to   184.84  actual    -0.02 to   210.82  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_14   H SE_4   rows  1440  forecast     1.44 to   230.81  actual    -0.00 to   470.53  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_28   H DE_LU  rows  1440  forecast   -10.42 to   591.73  actual   -12.28 to   665.82  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_28   H FR     rows  1440  forecast   -16.35 to   277.35  actual    -9.75 to   338.86  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_28   H ES     rows  1440  forecast    -7.84 to   226.40  actual    -1.43 to   255.16  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_28   H SE_1   rows  1440  forecast   -36.89 to   119.96  actual   -28.20 to   167.64  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_28   H SE_2   rows  1440  forecast    -0.76 to   126.38  actual    -2.72 to   177.76  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_28   H SE_3   rows  1440  forecast     0.48 to   181.57  actual    -0.02 to   210.82  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_28   H SE_4   rows  1440  forecast     0.84 to   216.70  actual    -0.00 to   470.53  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_56   H DE_LU  rows  1440  forecast   -10.47 to   603.02  actual   -12.28 to   665.82  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_56   H FR     rows  1440  forecast   -14.67 to   268.89  actual    -9.75 to   338.86  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_56   H ES     rows  1440  forecast    -4.78 to   230.34  actual    -1.43 to   255.16  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_56   H SE_1   rows  1440  forecast   -37.06 to   115.37  actual   -28.20 to   167.64  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_56   H SE_2   rows  1440  forecast    -1.15 to   131.34  actual    -2.72 to   177.76  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_56   H SE_3   rows  1440  forecast     1.03 to   180.64  actual    -0.02 to   210.82  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_56   H SE_4   rows  1440  forecast     2.11 to   227.98  actual    -0.00 to   470.53  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   H DE_LU  rows  1440  forecast   -12.22 to   605.33  actual   -12.28 to   665.82  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   H FR     rows  1440  forecast   -15.49 to   284.62  actual    -9.75 to   338.86  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   H ES     rows  1440  forecast    -3.02 to   229.60  actual    -1.43 to   255.16  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   H SE_1   rows  1440  forecast   -36.02 to   109.45  actual   -28.20 to   167.64  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   H SE_2   rows  1440  forecast    -1.40 to   130.48  actual    -2.72 to   177.76  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   H SE_3   rows  1440  forecast     1.89 to   175.54  actual    -0.02 to   210.82  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   H SE_4   rows  1440  forecast     2.54 to   225.94  actual    -0.00 to   470.53  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   Q DE_LU  rows  5760  forecast    -3.84 to   703.54  actual   -18.49 to   747.10  outside train range   8  equal to actual 0  all 13 checks pass
+chronos2_84   Q FR     rows  5760  forecast    -2.99 to   465.33  actual   -11.32 to   487.38  outside train range   3  equal to actual 0  all 13 checks pass
+chronos2_84   Q ES     rows  5760  forecast    -0.54 to   254.86  actual    -2.00 to   290.00  outside train range   1  equal to actual 0  all 13 checks pass
+chronos2_84   Q SE_1   rows  5760  forecast   -30.52 to   128.65  actual   -29.49 to   178.62  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   Q SE_2   rows  5760  forecast    -2.06 to   140.21  actual    -2.72 to   192.23  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   Q SE_3   rows  5760  forecast     1.26 to   200.72  actual    -0.03 to   250.09  outside train range   0  equal to actual 0  all 13 checks pass
+chronos2_84   Q SE_4   rows  5760  forecast     1.84 to   267.87  actual    -0.03 to   532.21  outside train range   0  equal to actual 0  all 13 checks pass
+
+35 files, 0 failed checks
+```
+
+**The same forecast again, and noise behind the cut.** The frozen setting forecast three validation days again from the real tables. Then every price from the delivery day on was replaced by noise, and the forecast was made once more. As a control the last price of D-1, which the rule allows, was raised by 50 EUR/MWh.
+
+```
+chronos2_84   H DE_LU  2026-06-23  units 24  fresh minus saved, largest 0.0e+00  noise from D on, largest change 0.0e+00  last price of D-1 plus 50, largest change 31.36
+chronos2_84   H SE_2   2026-07-10  units 24  fresh minus saved, largest 0.0e+00  noise from D on, largest change 0.0e+00  last price of D-1 plus 50, largest change 39.74
+chronos2_84   Q DE_LU  2026-06-23  units 96  fresh minus saved, largest 0.0e+00  noise from D on, largest change 0.0e+00  last price of D-1 plus 50, largest change 29.15
+```
+
+- A fresh forecast equals the saved file exactly.
+- Noise in every price from D on does not change one value. The control changes the forecast by 29 to 40 EUR/MWh.
+
+**The results files.** The first 253 lines of `backtest_core.csv` and the first 16381 lines of `daily_core.csv` equal the files before the runs. The ten runs of both models added 70 and 4200 lines, all with the split `validation`. The `naive_mae` of the 70 new rows equals the MAE of the saved naive row of the same experiment and zone.
+
+**The tests.** 79 new tests for the two wrappers and what they share, and 7 for the config. In the wrapper tests a stub stands in place of the loaded model, so they need no network and no download. The suite has 1043 tests.
+
+**Lines broken on purpose.** Each change was made, the 79 new tests were run, and the file was put back:
+
+| Change | Failed tests of the 79 | Where |
+|---|---|---|
+| Price cut in `cutoff.py`: end of D-1 to end of D | 14 | all three new test files |
+| The context is not cut to its length | 7 | all three new test files |
+| `infer_is_positive` is not handed to TimesFM | 23 | `tests/test_timesfm25.py` |
+| Chronos-2 is asked for the 0.9 quantile | 1 | `tests/test_chronos2.py` |
+
+**Leakage.** The lowest relative MAE of any zero-shot row is 0.4950, `chronos2_28` in SE_4. No mean is below 0.42 (PROJECT_CONTEXT §7). No forecast equals its actual price. The weights are older than the validation days (section 1).
+
+### 10. Run time: estimate against measured
+
+| Part | Projected from the three train days | Measured, day loops | Measured, command start to end |
+|---|---|---|---|
+| `chronos2_14`, experiment H | 0.5 minutes | 31.4 seconds | 37 seconds |
+| `chronos2_28`, experiment H | 0.6 minutes | 39.9 seconds | 46 seconds |
+| `chronos2_56`, experiment H | 0.7 minutes | 50.4 seconds | 57 seconds |
+| `chronos2_84`, experiment H | 0.9 minutes | 58.7 seconds | 65 seconds |
+| `chronos2_84`, experiment Q | 2.5 minutes | 157.6 seconds | 162 seconds |
+
+- The ten commands of both models took 1267 seconds from start to end, which is 21 minutes, against a projection of 20 minutes for the day loops.
+- The peak memory of the five Chronos-2 runs was 1020 to 1028 MB.
+
+### 11. Limits
+
+- The winner was picked among four settings on the same 60 days of one summer, so 0.5551 is somewhat optimistic.
+- The three longer contexts cannot be told apart on 60 days. The rule picked 84 days.
+- The winner is the longest candidate. On the hourly table Chronos-2 could read up to 341 days. That was not tried, because the same entry must fit the 15-minute table.
+- The bootstrap treats the days as independent. Errors of neighbouring days are related, so its intervals are likely too narrow.
+- The model reads the price only: no calendar, no load, wind or solar forecast. Each zone is forecast alone. Chronos-2 with covariates is planned for M3.
+- The forecast is a median. The RMSE of these rows is that of a median forecast (entry 95).
+- No quantile or interval forecast of the model was scored.
+- Whether Chronos-2 was trained on European electricity prices of earlier years is not known. The scored days are later than the weights.
+- The runs were made on the CPU of one laptop. Other processes ran on the machine, so the times are noisy. No GPU run was made.
+- The first run needs the network to fetch the weights. A run without a network was not tried.
+- Only `torch`, `chronos-forecasting` and `timesfm` are pinned. Their own dependencies are not.
+- The test days were not scored. That needs the owner's yes.
+
+### 12. How to run it again
+
+```
+.venv\Scripts\python -m epf.data.build_dataset
+.venv\Scripts\python -m epf.evaluation.backtest --model chronos2_84 --split validation --experiment H
+.venv\Scripts\python -m epf.evaluation.backtest --model chronos2_84 --split validation --experiment Q
+.venv\Scripts\python -m epf.evaluation.tables --experiment H --split validation
+.venv\Scripts\python -m epf.evaluation.firmness --winner chronos2_84 --models chronos2_84 chronos2_56 chronos2_28 chronos2_14 lgbm_load_826_slow mstl_182 --without SE_2
+```
+
+- Any of the four names of section 4 can stand in place of `chronos2_84` in the backtest command. A run adds rows to `backtest_core.csv` and replaces the rows of the same model, experiment, split and zone in `daily_core.csv`.
+- The first run downloads 478 MB of weights to the Hugging Face cache of the user, outside the repo.
+- `--split test` is refused for every Chronos-2 setting. None stands under `backtest.test_models`.
+- The timing of section 3 and the checks of section 9 were made with scripts outside the repo. Their printed output is in this file.
+
+## TimesFM 2.5 zero-shot
+
+Wrapped, compared, frozen and scored on the validation days on 27 Nov 2026, together with Chronos-2 (DECISIONS entries 92 to 100, proposed). The model is `src/epf/models/timesfm25.py`. It reads the price history only and runs through the same backtest. Nothing is fitted on the prices of the project. The context, the candidates, the rule, the machine and the timing before the runs are those of the section "Chronos-2 zero-shot", and are not repeated here.
+
+No setting of this section was scored on the test days. SE_1 and SE_2 are near-duplicates (DECISIONS entry 48).
+
+### In short
+
+- The frozen setting is `timesfm25_84`: `google/timesfm-2.5-200m-pytorch` at the commit `1d952420fba87f3c6dee4f240de0f1a0fbc790e3`, with the prices of the last 84 days as context.
+- `infer_is_positive` is false, because prices go negative. The other options are fixed and were not tuned (entry 96).
+- It was chosen from the same four context lengths, by the same rule. The three longer contexts are a tie inside the noise: 0.6298, 0.6360 and 0.6400. 14 days are clearly worse with 0.6558.
+- Mean relative MAE over the seven zones: 0.6298 on validation H and 0.6440 on validation Q.
+- TimesFM is clearly behind Chronos-2, which has 0.5551 and 0.5837, and clearly ahead of `mstl_182` on experiment H, which has 0.6887. All three read the price history only.
+- Time on the CPU: the four runs on experiment H took 506 seconds from start to end, and the run on experiment Q took 394 seconds. A forecast takes 0.214 to 0.366 seconds on the hourly table and 0.926 seconds on the 15-minute table. The peak memory was 2173 MB.
+
+### 1. How a forecast is made
+
+**The library.** `timesfm` 3.0.2 with its torch extra, on `torch` 2.15.0+cpu (entry 92). The package version is not the model version: package 3.0.2 holds the TimesFM 2.5 code under `timesfm.timesfm_2p5`.
+
+**The model.** `google/timesfm-2.5-200m-pytorch`, 925 MB of weights. The config pins the commit under `foundation_models.timesfm25`. The model repo was last changed on 2025-10-02, before the first validation day.
+
+**The context and the horizon.** As for Chronos-2: the last `context_days` times 24 or 96 prices before the price cut, and one value per market time unit of D. The wrapper hands the context to `forecast` as one series.
+
+**The options.** `fit` loads the weights the first time it is called. On every call it sets the forecast options with `compile`, with the context length of the table of its inputs as `max_context`. So one model object serves the hourly and the 15-minute table of a run. Nothing is estimated.
+
+| Option | Value | Why |
+|---|---|---|
+| `infer_is_positive` | false | With true every forecast is cut at 0 when its context holds no negative price. The default is true. A section with another value is refused |
+| `normalize_inputs` | true | As in the example of the model card. Not tuned |
+| `force_flip_invariance` | true | As in the example of the model card, and the default. Not tuned |
+| `max_horizon` | 128 | One output patch of the model. The longest delivery day has 100 quarter-hours |
+| `torch_compile` | false | With true the first forecast failed with "Compiler: cl is not found" |
+
+**The forecast.** The point forecast is the first answer of `forecast`. In `timesfm` 3.0.2 that is index 5 of the full output, the 0.5 quantile, so it is a median as for Chronos-2 (entry 95).
+
+### 2. What the code relies on in `timesfm` 3.0.2
+
+Checked on 27 Nov 2026 before the wrapper was written, against the installed source, the model card, the repo of the library and the loaded model.
+
+| Fact | Evidence | What the code does with it |
+|---|---|---|
+| The repo says "up to 16k context". The source allows 16384 steps for the context and the horizon together | `context_limit 16384` printed, and `compile` raises above it | A test checks every candidate: 8064 plus 128 steps at most |
+| One input patch has 32 steps and one output patch 128 | Printed from the loaded model | `max_horizon: 128`, one pass per forecast |
+| `compile` rounds `max_context` up to a multiple of 32 | Source of `compile` | 14 days of hours are 336 steps and become 352. The other three lengths are multiples of 32 |
+| A context shorter than `max_context` is padded at the front and the padding is masked | Source of `forecast` | A short history needs no special case |
+| An empty value inside a context is filled by linear interpolation, without a message | Source of `forecast` | The wrapper stops the run on an empty price |
+| `forecast` answers with (series, steps) and (series, steps, 10): the mean, then the quantiles 0.1 to 0.9 | Printed shapes `(1, 25)` and `(1, 25, 10)` | The wrapper takes the first answer |
+| The first answer is index 5 of the second, the 0.5 quantile | A check printed that both are equal | The point forecast is named a median |
+| `infer_is_positive` is true by default | `timesfm.ForecastConfig().infer_is_positive` printed `True` | The config sets false, and the wrapper refuses anything else |
+| `from_pretrained` takes a revision | Source of `_from_pretrained`, and the model loaded with the commit | `load_model` hands it over from the config |
+| `torch_compile=True` needs a C++ compiler | The first forecast failed with "Compiler: cl is not found" | The config sets false |
+| `timesfm` chooses the device itself | Source: the GPU when torch finds one, the CPU otherwise. The loaded model printed `device cpu` | No option exists, and none is set |
+| A forecast draws no random number | The same forecast under `torch.manual_seed(1)` and `(2)` | The seed is set once and does not matter |
+| A negative forecast comes out with `infer_is_positive=False` | A sine between -35 and 25 gave a lowest forecast of -34.76 | Nothing else is set |
+
+### 3. The four settings and the rule
+
+`timesfm25_14`, `timesfm25_28`, `timesfm25_56` and `timesfm25_84`: the same four context lengths as for Chronos-2, for the same reasons. A longer context would fit TimesFM alone: 168 days are 16128 quarter-hours. It was not tried, so that both models read the same days (entry 97). The rule is the one of section 5 of "Chronos-2 zero-shot".
+
+### 4. Validation results, experiment H
+
+60 validation days, 1440 hours per zone, runs of 27 Nov 2026 on the same machine. Every run ended with exit code 0 and passed its four checks in all seven zones. The full table of the table command is in section 6 of "Chronos-2 zero-shot". These are its rows for the four TimesFM settings and for the frozen settings of the other models:
+
+| Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|
+| lgbm_load_826_slow | 0.4909 | 0.5548 | 0.5707 | 0.6235 | 0.5122 | 0.4890 | 0.4797 | 0.5316 |
+| chronos2_84 | 0.5874 | 0.5071 | 0.5463 | 0.6217 | 0.5893 | 0.5335 | 0.5006 | 0.5551 |
+| timesfm25_84 | 0.6398 | 0.6308 | 0.6763 | 0.6796 | 0.6525 | 0.5787 | 0.5508 | 0.6298 |
+| timesfm25_56 | 0.6571 | 0.6119 | 0.6806 | 0.6999 | 0.6580 | 0.5881 | 0.5563 | 0.6360 |
+| timesfm25_28 | 0.6494 | 0.6129 | 0.6830 | 0.7128 | 0.6517 | 0.6056 | 0.5646 | 0.6400 |
+| timesfm25_14 | 0.7126 | 0.6353 | 0.6908 | 0.6731 | 0.6417 | 0.6279 | 0.6092 | 0.6558 |
+| mstl_182 | 0.7106 | 0.6521 | 0.7165 | 0.7317 | 0.6666 | 0.6596 | 0.6837 | 0.6887 |
+| naive | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+| Setting | Context days | Context steps | Run started (UTC) | Mean relative MAE | Mean MAE | Mean RMSE | Day loops, sum (s) | Seconds per forecast | Peak memory (MB) |
+|---|---|---|---|---|---|---|---|---|---|
+| `timesfm25_14` | 14 | 336 | 2026-11-27T04:33:48Z | 0.6558 | 19.32 | 29.82 | 89.9 | 0.214 | 2171 |
+| `timesfm25_28` | 28 | 672 | 2026-11-27T04:35:23Z | 0.6400 | 18.62 | 28.81 | 105.6 | 0.251 | 2170 |
+| `timesfm25_56` | 56 | 1344 | 2026-11-27T04:37:15Z | 0.6360 | 18.50 | 28.80 | 133.5 | 0.318 | 2173 |
+| `timesfm25_84` | 84 | 2016 | 2026-11-27T04:39:35Z | 0.6298 | 18.34 | 28.72 | 153.8 | 0.366 | 2170 |
+
+By the rule the winner is `timesfm25_84` with a mean of 0.6298.
+
+`timesfm25_84` per zone:
+
+| Zone | Relative MAE | MAE | RMSE | Naive MAE | Day loop (s) | Peak memory (MB) | Market time units |
+|---|---|---|---|---|---|---|---|
+| DE_LU | 0.6398 | 22.38 | 39.48 | 34.98 | 24.3 | 2170 | 1440 |
+| FR | 0.6308 | 21.51 | 29.42 | 34.09 | 21.5 | 2170 | 1440 |
+| ES | 0.6763 | 16.42 | 22.73 | 24.28 | 21.9 | 2170 | 1440 |
+| SE_1 | 0.6796 | 12.53 | 22.88 | 18.44 | 21.2 | 2170 | 1440 |
+| SE_2 | 0.6525 | 13.03 | 23.27 | 19.98 | 21.5 | 2170 | 1440 |
+| SE_3 | 0.5787 | 17.34 | 24.87 | 29.96 | 21.5 | 2170 | 1440 |
+| SE_4 | 0.5508 | 25.18 | 38.40 | 45.72 | 21.8 | 2170 | 1440 |
+| Mean | 0.6298 | 18.34 | 28.72 | 29.63 |  |  |  |
+
+### 5. How firm the choice is
+
+The output of `python -m epf.evaluation.firmness --winner timesfm25_84 --models timesfm25_84 timesfm25_56 timesfm25_28 timesfm25_14 chronos2_84 mstl_182 --without SE_2`, printed on 27 Nov 2026:
+
+```
+Experiment H, validation days 2026-06-23 to 2026-08-21, zones ['DE_LU', 'FR', 'ES', 'SE_1', 'SE_2', 'SE_3', 'SE_4']
+
+1. Recompute from the forecast files, without the harness metrics
+   42 model and zone pairs. Largest relative difference of MAE and relative MAE to the saved rows: 0.0e+00
+   forecasts outside the validation days or not 1440 per zone: 0. Actual prices that differ from the processed table: 0. Empty forecasts: 0
+   (these three counts are over the files of the given models and of naive)
+   mean of the daily MAE values, weighted by their market time units, against the pooled MAE, largest relative difference: 2.8e-16. Days per model and zone: [60]
+   largest difference of one daily MAE in the daily file to the forecast files: 0.0e+00 EUR/MWh
+
+2. Mean relative MAE over the 7 zones, by half of the days
+              first 30 days  last 30 days  all 60 days
+chronos2_84          0.5728        0.5446       0.5551
+timesfm25_84         0.6376        0.6274       0.6298
+timesfm25_56         0.6505        0.6256       0.6360
+timesfm25_28         0.6517        0.6342       0.6400
+timesfm25_14         0.6556        0.6602       0.6558
+mstl_182             0.7135        0.6694       0.6887
+
+3. How often is each model the best of the 6 in a zone, and its median and mean over the zones
+              zones won  median over zones   mean
+chronos2_84           7             0.5463 0.5551
+timesfm25_84          0             0.6398 0.6298
+timesfm25_56          0             0.6571 0.6360
+timesfm25_28          0             0.6494 0.6400
+timesfm25_14          0             0.6417 0.6558
+mstl_182              0             0.6837 0.6887
+   best model per zone: {'DE_LU': 'chronos2_84', 'FR': 'chronos2_84', 'ES': 'chronos2_84', 'SE_1': 'chronos2_84', 'SE_2': 'chronos2_84', 'SE_3': 'chronos2_84', 'SE_4': 'chronos2_84'}
+
+4. Bootstrap over the 60 days (2000 resamples of whole days, seed 42):
+   difference in mean relative MAE over the 7 zones, other model minus timesfm25_84
+   chronos2_84   mean -0.0737   95% interval -0.1019 to -0.0446   share of resamples where timesfm25_84 is better: 0.0%
+   timesfm25_56  mean +0.0064   95% interval -0.0030 to +0.0158   share of resamples where timesfm25_84 is better: 90.5%
+   timesfm25_28  mean +0.0106   95% interval -0.0010 to +0.0228   share of resamples where timesfm25_84 is better: 96.3%
+   timesfm25_14  mean +0.0263   95% interval +0.0077 to +0.0460   share of resamples where timesfm25_84 is better: 99.9%
+   mstl_182      mean +0.0612   95% interval +0.0176 to +0.1133   share of resamples where timesfm25_84 is better: 99.8%
+
+5. Mean relative MAE over the 6 zones without SE_2
+chronos2_84    0.5494
+timesfm25_84   0.6260
+timesfm25_56   0.6323
+timesfm25_28   0.6380
+timesfm25_14   0.6581
+mstl_182       0.6924
+
+6a. Relative MAE by hour of the day (Europe/Berlin), mean over the 7 zones
+      chronos2_84  timesfm25_84  timesfm25_56  timesfm25_28  timesfm25_14  mstl_182
+hour                                                                               
+0          0.3523        0.3488        0.3507        0.3548        0.3483    0.4327
+1          0.3841        0.3798        0.3834        0.3903        0.3826    0.4939
+2          0.3979        0.4074        0.4123        0.4209        0.4172    0.5307
+3          0.4152        0.4323        0.4419        0.4560        0.4402    0.5457
+4          0.4363        0.4630        0.4710        0.4824        0.4698    0.5625
+5          0.4664        0.4889        0.5017        0.5164        0.5134    0.5663
+6          0.4983        0.5188        0.5359        0.5484        0.5640    0.5614
+7          0.5143        0.5564        0.5758        0.6130        0.6226    0.6097
+8          0.5182        0.6013        0.6209        0.6571        0.6616    0.6252
+9          0.5286        0.6439        0.6544        0.6745        0.6986    0.6706
+10         0.5627        0.7173        0.7238        0.7277        0.7580    0.7670
+11         0.5838        0.7259        0.7332        0.7405        0.7631    0.8101
+12         0.5924        0.7284        0.7324        0.7424        0.7570    0.8833
+13         0.5910        0.7350        0.7335        0.7408        0.7565    0.9127
+14         0.5803        0.7325        0.7301        0.7316        0.7501    0.8891
+15         0.5787        0.7287        0.7307        0.7251        0.7332    0.8246
+16         0.5939        0.7152        0.7162        0.6984        0.7100    0.7661
+17         0.6282        0.7222        0.7212        0.6965        0.7204    0.7292
+18         0.6146        0.6983        0.7011        0.6811        0.7058    0.6940
+19         0.6302        0.6836        0.6826        0.6848        0.7094    0.7271
+20         0.6302        0.6733        0.6814        0.6870        0.7195    0.7342
+21         0.6605        0.6872        0.6979        0.6962        0.7252    0.7397
+22         0.6841        0.7080        0.7169        0.7144        0.7380    0.7526
+23         0.6818        0.7236        0.7211        0.7295        0.7609    0.7776
+
+6b. Relative MAE of timesfm25_84 by hour of the day (Europe/Berlin) and zone
+      DE_LU     FR     ES   SE_1   SE_2   SE_3   SE_4   mean
+hour                                                        
+0    0.4336 0.4130 0.4124 0.3141 0.2777 0.2859 0.3052 0.3488
+1    0.4980 0.4477 0.3514 0.3399 0.3113 0.3415 0.3684 0.3798
+2    0.5361 0.4926 0.4091 0.3662 0.3341 0.3456 0.3679 0.4074
+3    0.5749 0.5073 0.4316 0.3924 0.3700 0.3758 0.3740 0.4323
+4    0.6164 0.4808 0.4671 0.4552 0.4213 0.4046 0.3957 0.4630
+5    0.5496 0.5616 0.4236 0.5197 0.4986 0.4368 0.4322 0.4889
+6    0.5648 0.6428 0.4107 0.5691 0.5394 0.4700 0.4351 0.5188
+7    0.5716 0.6861 0.4638 0.6075 0.5735 0.5131 0.4794 0.5564
+8    0.6393 0.7169 0.6082 0.6345 0.6199 0.4999 0.4905 0.6013
+9    0.7232 0.6944 0.6635 0.6638 0.6297 0.5564 0.5767 0.6439
+10   0.7667 0.6904 0.8326 0.7026 0.6911 0.6450 0.6927 0.7173
+11   0.7325 0.6700 0.8494 0.7439 0.7469 0.6592 0.6796 0.7259
+12   0.6763 0.6517 0.8483 0.7448 0.7992 0.6924 0.6861 0.7284
+13   0.6291 0.6145 0.8575 0.7885 0.8303 0.7230 0.7018 0.7350
+14   0.6183 0.6343 0.8835 0.8145 0.8343 0.6929 0.6500 0.7325
+15   0.6087 0.6659 0.8939 0.8280 0.8338 0.6553 0.6155 0.7287
+16   0.6470 0.6654 0.8754 0.7744 0.7554 0.6727 0.6160 0.7152
+17   0.7071 0.6733 0.9454 0.7786 0.7354 0.6297 0.5861 0.7222
+18   0.7097 0.6545 0.7729 0.8269 0.7483 0.6064 0.5692 0.6983
+19   0.6409 0.5709 0.6496 0.8417 0.7577 0.7079 0.6164 0.6836
+20   0.6242 0.6267 0.5454 0.8206 0.7659 0.7067 0.6239 0.6733
+21   0.5988 0.6619 0.6017 0.8071 0.7258 0.7365 0.6783 0.6872
+22   0.6304 0.6855 0.6071 0.8210 0.7507 0.7610 0.7001 0.7080
+23   0.7266 0.8074 0.5708 0.7772 0.7348 0.7361 0.7124 0.7236
+
+6c. Mean relative MAE over the 7 zones by calendar week (Monday to Sunday)
+            days  chronos2_84  timesfm25_84  timesfm25_56  timesfm25_28  timesfm25_14  mstl_182
+week from                                                                                      
+2026-06-22     6       0.7525        0.8263        0.8311        0.8476        0.7953    0.9158
+2026-06-29     7       0.6831        0.7186        0.7361        0.7179        0.7067    0.8159
+2026-07-06     7       0.3926        0.4516        0.4612        0.4719        0.4840    0.5112
+2026-07-13     7       0.5761        0.6673        0.6828        0.7004        0.7491    0.7895
+2026-07-20     7       0.6083        0.7407        0.7434        0.7344        0.7665    0.8905
+2026-07-27     7       0.6073        0.6532        0.6571        0.6334        0.6355    0.8294
+2026-08-03     7       0.5885        0.6284        0.6371        0.6544        0.6809    0.7632
+2026-08-10     7       0.4426        0.4738        0.4744        0.4778        0.5188    0.4999
+2026-08-17     5       0.5578        0.6806        0.6734        0.6926        0.7202    0.6011
+
+6d. Days of timesfm25_84: delivery days with a daily MAE above naive, and the share of its summed absolute error in its 6 worst days
+       days above naive  of days share in the 6 worst days
+DE_LU                14       60                     25.1%
+FR                   14       60                     16.3%
+ES                   19       60                     18.2%
+SE_1                 14       60                     42.4%
+SE_2                 15       60                     42.0%
+SE_3                 11       60                     23.7%
+SE_4                 13       60                     25.1%
+   daily MAE above naive on 100 of the 420 days of all zones
+```
+
+What it shows:
+
+- **The three longer contexts are a tie.** Against the winner `timesfm25_56` is +0.0064 (95% interval -0.0030 to +0.0158) and `timesfm25_28` is +0.0106 (-0.0010 to +0.0228). Both intervals hold zero. In the last 30 days `timesfm25_56` is the best of the four with 0.6256.
+- **14 days are clearly worse**: +0.0263 (+0.0077 to +0.0460). Still, `timesfm25_14` is the best of the four TimesFM settings in SE_1 and SE_2.
+- **The winner is the longest candidate**, as for Chronos-2.
+- **Chronos-2 is clearly ahead**: `chronos2_84` is -0.0737 (-0.1019 to -0.0446), and it is the best of the six in all seven zones.
+- **TimesFM is clearly ahead of `mstl_182`**: +0.0612 for `mstl_182` (+0.0176 to +0.1133). It is below `mstl_182` in every zone.
+- By hour TimesFM starts as low as Chronos-2, 0.3488 at hour 0, and is above it from hour 2 on. Its highest value is 0.7350 at hour 13.
+- Without SE_2 the mean of the winner is 0.6260.
+- The winner has a daily MAE above the naive forecast on 100 of the 420 days of all zones. Its 6 worst days hold 16.3% of its error in FR and 42.4% in SE_1.
+
+### 6. Experiment Q, validation
+
+`timesfm25_84` with the same config entry, on the 15-minute table. No other TimesFM setting ran on experiment Q (entry 99). Every check passed. The command took 394 seconds. The table of the table command is in section 8 of "Chronos-2 zero-shot".
+
+| Setting | Context days | Context steps | Run started (UTC) | Mean relative MAE | Mean MAE | Mean RMSE | Day loops, sum (s) | Seconds per forecast | Peak memory (MB) |
+|---|---|---|---|---|---|---|---|---|---|
+| `timesfm25_84` | 84 | 8064 | 2026-11-27T04:45:40Z | 0.6440 | 19.18 | 30.33 | 389.0 | 0.926 | 2158 |
+
+| Zone | Relative MAE | MAE | RMSE | Naive MAE | Day loop (s) | Peak memory (MB) | Market time units |
+|---|---|---|---|---|---|---|---|
+| DE_LU | 0.6820 | 24.08 | 43.41 | 35.31 | 55.3 | 2158 | 5760 |
+| FR | 0.6716 | 23.39 | 33.47 | 34.83 | 52.7 | 2158 | 5760 |
+| ES | 0.6992 | 17.15 | 24.47 | 24.53 | 54.4 | 2158 | 5760 |
+| SE_1 | 0.6544 | 12.31 | 21.01 | 18.81 | 55.6 | 2158 | 5760 |
+| SE_2 | 0.6268 | 12.74 | 21.45 | 20.32 | 57.3 | 2158 | 5760 |
+| SE_3 | 0.6172 | 18.75 | 27.39 | 30.37 | 58.4 | 2158 | 5760 |
+| SE_4 | 0.5568 | 25.81 | 41.13 | 46.36 | 55.2 | 2158 | 5760 |
+| Mean | 0.6440 | 19.18 | 30.33 | 30.08 |  |  |  |
+
+- The mean is 0.6440 against 0.6298 on experiment H. The Q value is worse in five zones and better in SE_1 and SE_2.
+- `mstl_182` has 0.6831 on these days. TimesFM is below it in ES and in the four Swedish zones, and above it in DE_LU and FR.
+- Chronos-2 has 0.5837 and is below TimesFM in every zone but SE_2.
+- The setting was chosen on the hourly table and was not tuned on the 15-minute table.
+
+### 7. Checks
+
+The checks are those of section 9 of "Chronos-2 zero-shot", made for both models in the same runs of the same scripts. The audit of the 35 saved TimesFM files:
+
+```
+validation days 2026-06-23 to 2026-08-21, zones ['DE_LU', 'FR', 'ES', 'SE_1', 'SE_2', 'SE_3', 'SE_4']
+timesfm25_14  H DE_LU  rows  1440  forecast   -12.48 to   408.51  actual   -12.28 to   665.82  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_14  H FR     rows  1440  forecast   -31.27 to   239.23  actual    -9.75 to   338.86  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_14  H ES     rows  1440  forecast   -25.25 to   234.25  actual    -1.43 to   255.16  outside train range  13  equal to actual 0  all 13 checks pass
+timesfm25_14  H SE_1   rows  1440  forecast   -30.74 to    83.88  actual   -28.20 to   167.64  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_14  H SE_2   rows  1440  forecast    -2.95 to    83.86  actual    -2.72 to   177.76  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_14  H SE_3   rows  1440  forecast    -7.91 to   138.77  actual    -0.02 to   210.82  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_14  H SE_4   rows  1440  forecast   -24.39 to   225.83  actual    -0.00 to   470.53  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_28  H DE_LU  rows  1440  forecast   -24.30 to   372.17  actual   -12.28 to   665.82  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_28  H FR     rows  1440  forecast   -19.40 to   239.45  actual    -9.75 to   338.86  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_28  H ES     rows  1440  forecast   -11.61 to   232.33  actual    -1.43 to   255.16  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_28  H SE_1   rows  1440  forecast   -30.96 to    76.82  actual   -28.20 to   167.64  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_28  H SE_2   rows  1440  forecast    -3.71 to    79.51  actual    -2.72 to   177.76  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_28  H SE_3   rows  1440  forecast    -7.00 to   164.19  actual    -0.02 to   210.82  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_28  H SE_4   rows  1440  forecast   -12.24 to   221.11  actual    -0.00 to   470.53  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_56  H DE_LU  rows  1440  forecast   -25.83 to   333.29  actual   -12.28 to   665.82  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_56  H FR     rows  1440  forecast   -31.31 to   241.01  actual    -9.75 to   338.86  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_56  H ES     rows  1440  forecast   -14.23 to   236.96  actual    -1.43 to   255.16  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_56  H SE_1   rows  1440  forecast   -31.57 to    82.64  actual   -28.20 to   167.64  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_56  H SE_2   rows  1440  forecast    -3.14 to    88.48  actual    -2.72 to   177.76  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_56  H SE_3   rows  1440  forecast    -9.37 to   168.51  actual    -0.02 to   210.82  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_56  H SE_4   rows  1440  forecast   -24.56 to   215.00  actual    -0.00 to   470.53  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  H DE_LU  rows  1440  forecast   -26.36 to   339.53  actual   -12.28 to   665.82  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  H FR     rows  1440  forecast   -27.79 to   232.69  actual    -9.75 to   338.86  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  H ES     rows  1440  forecast   -10.50 to   233.44  actual    -1.43 to   255.16  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  H SE_1   rows  1440  forecast   -29.84 to    81.30  actual   -28.20 to   167.64  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  H SE_2   rows  1440  forecast    -3.24 to    83.41  actual    -2.72 to   177.76  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  H SE_3   rows  1440  forecast   -10.12 to   168.66  actual    -0.02 to   210.82  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  H SE_4   rows  1440  forecast   -20.44 to   220.42  actual    -0.00 to   470.53  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  Q DE_LU  rows  5760  forecast   -20.70 to   257.01  actual   -18.49 to   747.10  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  Q FR     rows  5760  forecast   -14.55 to   239.73  actual   -11.32 to   487.38  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  Q ES     rows  5760  forecast   -10.64 to   221.40  actual    -2.00 to   290.00  outside train range   1  equal to actual 0  all 13 checks pass
+timesfm25_84  Q SE_1   rows  5760  forecast   -34.10 to   109.02  actual   -29.49 to   178.62  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  Q SE_2   rows  5760  forecast    -2.86 to   113.11  actual    -2.72 to   192.23  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  Q SE_3   rows  5760  forecast    -1.78 to   190.34  actual    -0.03 to   250.09  outside train range   0  equal to actual 0  all 13 checks pass
+timesfm25_84  Q SE_4   rows  5760  forecast    -7.99 to   208.50  actual    -0.03 to   532.21  outside train range   0  equal to actual 0  all 13 checks pass
+
+35 files, 0 failed checks
+```
+
+The same forecast again, and noise behind the cut:
+
+```
+timesfm25_84  H DE_LU  2026-06-23  units 24  fresh minus saved, largest 0.0e+00  noise from D on, largest change 0.0e+00  last price of D-1 plus 50, largest change 58.75
+timesfm25_84  H SE_2   2026-07-10  units 24  fresh minus saved, largest 0.0e+00  noise from D on, largest change 0.0e+00  last price of D-1 plus 50, largest change 48.70
+timesfm25_84  Q DE_LU  2026-06-23  units 96  fresh minus saved, largest 0.0e+00  noise from D on, largest change 0.0e+00  last price of D-1 plus 50, largest change 37.43
+```
+
+- A fresh forecast equals the saved file exactly.
+- Noise in every price from D on does not change one value. The control changes the forecast by 37 to 59 EUR/MWh.
+- `timesfm25_14` has 13 forecasts in ES below the lowest train price of that zone, -15.00 EUR/MWh. Its lowest forecast there is -25.25. The frozen setting has none on experiment H and one on experiment Q, also in ES.
+
+### 8. Run time: estimate against measured
+
+| Part | Projected from the three train days | Measured, day loops | Measured, command start to end |
+|---|---|---|---|
+| `timesfm25_14`, experiment H | 1.5 minutes | 89.9 seconds | 95 seconds |
+| `timesfm25_28`, experiment H | 1.7 minutes | 105.6 seconds | 112 seconds |
+| `timesfm25_56`, experiment H | 2.2 minutes | 133.5 seconds | 140 seconds |
+| `timesfm25_84`, experiment H | 2.6 minutes | 153.8 seconds | 159 seconds |
+| `timesfm25_84`, experiment Q | 6.6 minutes | 389.0 seconds | 394 seconds |
+
+- The peak memory of the five TimesFM runs was 2158 to 2173 MB, about twice that of Chronos-2.
+- A TimesFM forecast takes 2.5 to 2.9 times as long as a Chronos-2 forecast at the same context. `force_flip_invariance` runs the model twice per forecast.
+
+### 9. Limits
+
+The limits of section 11 of "Chronos-2 zero-shot" hold here too, with 0.6298 as the value of the winner. These are added:
+
+- The options `normalize_inputs` and `force_flip_invariance` were set as in the example of the model card and were not tried the other way.
+- TimesFM could read more than 84 days on both tables. That was not tried.
+- `torch.compile` is off on this machine, so the run times are those of the plain model.
+- `timesfm` picks the device itself. On a machine with a GPU that torch can use, the same config would run there.
+
+### 10. How to run it again
+
+```
+.venv\Scripts\python -m epf.evaluation.backtest --model timesfm25_84 --split validation --experiment H
+.venv\Scripts\python -m epf.evaluation.backtest --model timesfm25_84 --split validation --experiment Q
+.venv\Scripts\python -m epf.evaluation.firmness --winner timesfm25_84 --models timesfm25_84 timesfm25_56 timesfm25_28 timesfm25_14 chronos2_84 mstl_182 --without SE_2
+```
+
+- Any of the four TimesFM names can stand in place of `timesfm25_84` in the backtest command.
+- The first run downloads 925 MB of weights to the Hugging Face cache of the user, outside the repo.
+- `--split test` is refused for every TimesFM setting. None stands under `backtest.test_models`.
+
+The commits behind the numbers of the two zero-shot sections, of 27 Nov 2026:
+
+| Commit | What it holds |
+|---|---|
+| `b4aff28` | `torch`, `chronos-forecasting` and `timesfm` pinned |
+| `37ada8e` | `src/epf/models/chronos2.py`, `zero_shot.py` and their tests |
+| `3428808` | `src/epf/models/timesfm25.py` and its tests |
+| `95b65b6` | the eight candidates in the config and the rule, before any validation run |
+| `978f516` | the 70 results rows and the two frozen settings |
