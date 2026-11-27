@@ -34,7 +34,7 @@ On Linux or macOS, use `.venv/bin/python` in the second command.
 
 The second command also installs the project's own package, `src/epf`, in editable mode.
 
-Run the tests with `.venv\Scripts\python -m pytest`. They use no network and no data files, and take about 50 seconds.
+Run the tests with `.venv\Scripts\python -m pytest`. They use no network and no data files, and take about 70 seconds.
 
 ## ENTSO-E token
 
@@ -135,7 +135,7 @@ The notebook [notebooks/01_eda_drivers.ipynb](notebooks/01_eda_drivers.ipynb) ca
 
 ## Backtest
 
-Every model runs through one backtest. For each delivery day D it gets only what is known on D-1 before the 12:00 gate closure: prices through D-1, the day-ahead load, wind and solar forecast for D, and actual load through D-2 (DECISIONS entry 51). It also gets the weather forecast for D from the model run of D-1 (entry 78). It returns one forecast per market time unit of D.
+Every model runs through one backtest. For each delivery day D it gets only what is known on D-1 before the 12:00 gate closure: prices through D-1, the day-ahead load, wind and solar forecast for D, and actual load through D-2 (DECISIONS entry 51). It also gets the weather forecast for D from the model run of D-1 (entry 78) and the holiday dates of the country of the zone (entry 82). It returns one forecast per market time unit of D.
 
 Once the tables are built, this scores the seasonal naive forecast on the 60 validation days:
 
@@ -147,12 +147,23 @@ Once the tables are built, this scores the seasonal naive forecast on the 60 val
 - One run covers the hourly table (experiment H) and the 15-minute table (experiment Q) for all seven zones. `--experiment H` or `--experiment Q` runs one of the two.
 - The seasonal naive forecast is the price at the same local time 7 days before (DECISIONS entry 52). It is the reference for relative MAE.
 - The command prints its checks per zone and experiment and stops with an error when one fails.
-- Results go to `reports/results/`, which is committed. `backtest_core.csv` holds one row per run, zone and experiment for all seven zones. Each row has the metrics, the model settings, the seed, the run time, the peak memory and the hardware. `daily_core.csv` holds the losses per delivery day.
+- Results go to `reports/results/`, which is committed. Its three files cover all seven zones. `backtest_core.csv` holds one row per run, zone and experiment. Each row has the metrics, the model settings, the seed, the run time, the peak memory and the hardware. `daily_core.csv` holds the losses per delivery day. `quantile_core.csv` holds the scores of the quantile forecasts (see "LightGBM" below).
 - A run adds rows to `backtest_core.csv`, so a second run shows as a second set of rows.
 - Forecasts per market time unit are saved under `data/forecasts/`, which git ignores.
-- `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config: the naive forecast and `mstl_182`, the statistical baseline (DECISIONS entries 50, 58 and 67). Each of the two test runs was done once, on 24 and on 25 Nov 2026.
+- `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config: the naive forecast, `mstl_182`, the statistical baseline, and `lgbm_load_826_slow`, the LightGBM model (DECISIONS entries 50, 58, 67 and 90). Each of the three test runs was done once, on 24, 25 and 26 Nov 2026. None of them is run again.
 
 MAE and RMSE are in EUR/MWh. Price levels differ several-fold between zones, so zones are compared on relative MAE only.
+
+This prints the relative MAE of every model per zone as a Markdown table:
+
+```
+.venv\Scripts\python -m epf.evaluation.tables --experiment H --split validation
+```
+
+- It reads the saved rows of `backtest_core.csv`, runs no model and writes no file. It takes about 2 seconds.
+- The models are sorted by their mean over the seven zones, the lowest first. `--experiment Q` prints the table of the 15-minute experiment.
+- When a model has more than one run, the newest row is used, and a line under the table names the model.
+- The result tables of this file were printed by this command (DECISIONS entry 83).
 
 ### Statistical baseline
 
@@ -181,7 +192,7 @@ The test values are lower than the validation values because the naive forecast 
 
 ## Features for LightGBM
 
-The LightGBM model is not trained yet. Its features are built and tested. Once the tables are built:
+The LightGBM model reads the features below. The backtest builds them in memory at every fit. This command builds the same frames for all days, to look at them. Once the tables are built:
 
 ```
 .venv\Scripts\python -m epf.features.build
@@ -206,10 +217,92 @@ The LightGBM model is not trained yet. Its features are built and tested. Once t
 
 The numbers behind the choice of the features and the checks of the built frames are in [docs/MODEL_NOTES.md](docs/MODEL_NOTES.md), "LightGBM features". The reasons are in DECISIONS entries 69 to 80.
 
+## LightGBM
+
+The LightGBM model is `lgbm_load_826_slow`. The config names it under `backtest.lightgbm_model`. It runs through the same backtest as the other models:
+
+```
+.venv\Scripts\python -m epf.evaluation.backtest --model lgbm_load_826_slow --split validation
+```
+
+- It uses the feature groups `price`, `calendar`, `load_forecast`, `wind_forecast`, `solar_forecast` and `actual_load`. It has 400 trees with a learning rate of 0.025 and is fitted on the squared error.
+- It is fitted every 7 days on a moving window of the last 826 days. On the days between, the trees stay and are applied to the features of the day.
+- The 15-minute table starts on 2025-10-01, so on experiment Q the window never fills. The model trains on all the 15-minute history there (DECISIONS entry 89).
+- Every fit builds its training rows from the inputs of its delivery day, and each training day is cut again as if it were forecast (DECISIONS entry 85). So a training row holds only what was known when its own day was forecast.
+- `lightgbm` 4.7.0 is used through its native API, `lightgbm.train` and `lightgbm.Dataset`. scikit-learn is not installed (DECISIONS entry 84).
+- The run takes about 7 minutes on experiment H and about 4 minutes on experiment Q for the validation days. Almost all of that time builds features, not trees.
+
+How it was chosen:
+
+- 11 settings ran on the 60 validation days of experiment H for all seven zones. They differ in the feature groups, in the window (all history, 826 or 364 days) and in three parameter changes. The setting with the lowest mean relative MAE won. The rule was fixed before the runs (DECISIONS entries 87 and 88).
+- The four best settings lie within 0.0093 of each other. That is inside the noise of 60 days, so the rule picked the winner and the numbers do not prove it better than the next three.
+- The day-ahead load, wind and solar forecasts carry the gain: they move the mean from 0.6569 to 0.5539. Actual load two days before did not lower the mean. The weather features did not lower it on the windows of 826 and 364 days. On all history they did, but 1893 of the 2723 training days of the first fit have no weather there, so that pair cannot show the value of weather alone.
+- The rows of all 11 settings are in `backtest_core.csv`. Every table, the run times and the checks are in [docs/MODEL_NOTES.md](docs/MODEL_NOTES.md), "LightGBM".
+
+Relative MAE on the 60 validation days. The naive forecast is the reference, so its value is 1.
+
+| Experiment | Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|---|
+| H | `lgbm_load_826_slow` | 0.4909 | 0.5548 | 0.5707 | 0.6235 | 0.5122 | 0.4890 | 0.4797 | 0.5316 |
+| H | `mstl_182` | 0.7106 | 0.6521 | 0.7165 | 0.7317 | 0.6666 | 0.6596 | 0.6837 | 0.6887 |
+| H | `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| Q | `lgbm_load_826_slow` | 0.5304 | 0.5784 | 0.6227 | 0.6911 | 0.6059 | 0.5040 | 0.5152 | 0.5782 |
+| Q | `mstl_182` | 0.6611 | 0.6528 | 0.7160 | 0.7267 | 0.6682 | 0.6617 | 0.6955 | 0.6831 |
+| Q | `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+Relative MAE on the 90 test days. The LightGBM test run was done once, on 26 Nov 2026 (DECISIONS entry 90).
+
+| Experiment | Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|---|
+| H | `lgbm_load_826_slow` | 0.4048 | 0.4854 | 0.5155 | 0.4752 | 0.4296 | 0.5061 | 0.4846 | 0.4716 |
+| H | `mstl_182` | 0.4831 | 0.5151 | 0.6137 | 0.6439 | 0.6486 | 0.5499 | 0.5116 | 0.5666 |
+| H | `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| Q | `lgbm_load_826_slow` | 0.4028 | 0.4789 | 0.5245 | 0.4936 | 0.4440 | 0.5030 | 0.5079 | 0.4792 |
+| Q | `mstl_182` | 0.4901 | 0.5182 | 0.6181 | 0.6496 | 0.6466 | 0.5512 | 0.5101 | 0.5691 |
+| Q | `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+- The test values are lower than the validation values because the naive forecast was much worse on the test days. On experiment H its mean MAE rose from 29.63 to 54.83 EUR/MWh, and that of the LightGBM model from 15.46 to 25.85.
+- DE_LU on the test days is a little below a published value of about 0.42 for that zone, which comes from another period and other inputs. The mean is inside the published range of 0.42 to 0.48 (DECISIONS entry 90).
+- SE4 has no usable solar forecast, and the solar features of all four Swedish zones are empty. SE1 and SE2 are near-duplicates.
+- 7 of the 90 ES test days, 6 to 12 Nov 2026, have no wind and no solar forecast. The ES test values include these days.
+
+This prints how firm the choice between the settings is:
+
+```
+.venv\Scripts\python -m epf.evaluation.firmness --winner lgbm_load_826_slow --models lgbm_load_826_slow lgbm_load_826 lgbm_load_826_l1 lgbm_all lgbm_all_826 lgbm_fcst lgbm_load lgbm_load_826_leaves15 lgbm_load_364 lgbm_all_364 lgbm_price mstl_182 --without SE_2
+```
+
+- It prints the MAE computed again from the saved forecasts, the mean by half of the days, the zones each setting wins, a bootstrap over whole delivery days, the mean without one zone, and the relative MAE by hour, by week and on the worst days.
+- It only reads: the saved rows, the processed tables and the forecasts under `data/forecasts/`. So the backtest of every named setting must have run on the machine first. It takes about 5 seconds and writes no file.
+- It reads the validation days. It refuses the test days unless every named model is listed under `backtest.test_models` (DECISIONS entry 83).
+
+### Quantile forecasts
+
+The same setting also gives prediction intervals:
+
+```
+.venv\Scripts\python -m epf.evaluation.quantiles --split validation
+```
+
+- It fits one set of trees per level, for the levels 0.05, 0.25, 0.50, 0.75 and 0.95 (`backtest.quantile_levels`). The features, the window and the parameters are those of `lgbm_load_826_slow`.
+- The levels are fitted apart, so their values can cross. The command sorts the five values of each market time unit before it scores them, and reports the share of market time units that sorting changed.
+- It adds one row per zone and experiment to `reports/results/quantile_core.csv`: the pinball loss per level, the coverage and the width of the 50% and the 90% interval, and the crossing share. A second run adds a second set of rows.
+- It scores the validation days only and takes about 18 minutes. The test days are refused (DECISIONS entry 91).
+
+Means over the seven zones on the 60 validation days:
+
+| Experiment | Mean pinball loss, EUR/MWh | Coverage of the 50% interval | Coverage of the 90% interval | Crossing share |
+|---|---|---|---|---|
+| H | 5.2845 | 0.3848 | 0.7538 | 0.2027 |
+| Q | 5.7518 | 0.3407 | 0.7328 | 0.3027 |
+
+The intervals are too narrow in every zone and on both experiments: the 90% interval holds about 75% of the prices on H and about 73% on Q. They are reported as they are and were not widened. The values per zone are in DECISIONS entry 91.
+
 ## Environment
 
 - Python 3.12.10, venv + pip, pinned `requirements.txt`.
 - Hardware: laptop, Lenovo 21RVCTO1WW, AMD Ryzen AI 9 HX PRO 370 with 12 cores and 24 threads, 59.6 GB RAM, AMD Radeon 890M integrated graphics, Windows 11 (10.0.26200). The backtest runs on the CPU. No GPU run has been made yet.
+- Every backtest command imports `lightgbm` 4.7.0, also a run of the naive forecast. On 26 Nov 2026 `import lightgbm` failed on this machine while an installer was replacing the Microsoft Visual C++ runtime, and worked again when the installer had finished.
 - The backtest reads its peak memory on Windows only. On Linux or macOS the `peak_memory_mb` column stays empty (DECISIONS entry 55). The backtest has not been run on such a machine yet.
 
 ## Project documents
