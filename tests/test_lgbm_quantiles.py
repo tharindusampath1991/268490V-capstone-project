@@ -220,6 +220,20 @@ def test_another_seed_gives_another_frame_when_rows_and_features_are_sampled():
     assert not first.equals(second)
 
 
+# The weekly refit and every change of zone are refits with the same feature names.
+def test_a_refit_on_a_table_with_the_same_features_replaces_the_trees():
+    first_table, second_table, weather = make_table(seed=0), make_table(seed=5), make_weather()
+    reused = model_with(SAMPLED)
+
+    first = quantiles(reused, first_table, weather=weather)
+    names_of_the_first_fit = list(reused.feature_names)
+    second = quantiles(reused, second_table, weather=weather)
+
+    assert reused.feature_names == names_of_the_first_fit
+    assert_identical(second, quantiles(model_with(SAMPLED), second_table, weather=weather))
+    assert not second.equals(first)
+
+
 def test_a_model_fitted_on_another_table_before_forecasts_like_a_fresh_one():
     # The other table is on the 15-minute grid, has no solar column and no weather, so its
     # features have another column, quarter_hour, and other rows.
@@ -337,9 +351,11 @@ def test_changing_the_last_price_before_the_cut_changes_the_frame():
     low_frame = quantiles(model_with(price_only), low)
     high_frame = quantiles(model_with(price_only), high)
 
-    # The price follows the last price of the day before, so the median moves by about 80.
-    # The outer levels of these 14 training days follow it less and are not asserted.
-    assert (high_frame[0.5] - low_frame[0.5]).max() > 40
+    # The price follows the last price of the day before, which differs by 80. Measured on
+    # 2026-11-26: the levels 0.25, 0.5 and 0.75 move by 52.99, 53.18 and 56.79. The two outer
+    # levels are not asserted: on these 14 training days the level 0.95 does not move at all.
+    moves = (high_frame - low_frame).max()
+    assert (moves[[0.25, 0.5, 0.75]] > 40).all(), moves
     assert not high_frame.equals(low_frame)
 
 

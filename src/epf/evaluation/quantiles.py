@@ -102,9 +102,12 @@ def quantile_model(config: dict) -> LgbmQuantileModel:
     Output: the model, named after the entry with SUFFIX added. It gets the
         feature settings, the columns under each cut, the weather rule and
         the seed of the config, as the point model does.
-    Raises ValueError when the name has no entry, and for an entry or levels
-        that the model refuses.
+    Raises ValueError when the config has no levels, when the name has no
+        entry, and for an entry or levels that the model refuses.
     """
+    if "quantile_levels" not in config["backtest"]:
+        raise ValueError("The config has no backtest.quantile_levels, the levels of the "
+                         "quantile forecasts.")
     name = config["backtest"]["lightgbm_model"]
     if name not in config["models"]:
         raise ValueError(f"backtest.lightgbm_model names '{name}', which is no entry "
@@ -206,6 +209,8 @@ def score(actual: pd.Series, quantiles: pd.DataFrame) -> dict[str, float]:
     scores["mean_pinball"] = mean_pinball_loss(
         actual, {level: quantiles[level] for level in levels})
     for low, high in intervals(levels):
+        # 100 * (0.95 - 0.05) is 89.99999999999999 in floating point. The format g keeps six
+        # significant digits, so the label is 90.
         percent = f"{100 * (high - low):g}"
         scores[f"coverage_{percent}"] = coverage(actual, quantiles[low], quantiles[high])
         scores[f"width_{percent}"] = float((quantiles[high] - quantiles[low]).mean())

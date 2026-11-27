@@ -415,6 +415,28 @@ def test_a_frozen_name_without_a_model_entry_is_refused(tmp_path):
         quantile_model(config)
 
 
+def test_a_config_without_the_quantile_levels_is_refused(tmp_path):
+    config = project_config(tmp_path)
+    del config["backtest"]["quantile_levels"]
+
+    with pytest.raises(ValueError, match="backtest.quantile_levels"):
+        quantile_model(config)
+
+
+def test_run_ends_with_one_line_for_a_config_without_the_quantile_levels(tmp_path):
+    config = project_config(tmp_path)
+    del config["backtest"]["quantile_levels"]
+    save_tables(config)
+
+    with pytest.raises(SystemExit) as refused:
+        run(config, "validation")
+
+    assert refused.value.code == ("The config has no backtest.quantile_levels, the levels of "
+                                  "the quantile forecasts.")
+    assert not Path(config["paths"]["results"]).exists()
+    assert not Path(config["paths"]["forecasts"]).exists()
+
+
 def test_run_writes_one_row_per_zone_and_experiment_with_the_scores(tmp_path):
     config = project_config(tmp_path)
     save_tables(config)
