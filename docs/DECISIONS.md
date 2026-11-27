@@ -871,3 +871,34 @@ Experiment Q:
 - Technical. A forecast is the same on every run: measured on three validation days per model, on this machine and with these versions. The options of TimesFM are those of the example of its model card and were not tuned (entry 96). The packages that came with the three pins are not pinned (entry 92). The pinned commits stay on the Hugging Face hub. A run on a GPU gives the same forecasts as the CPU. The last two were not measured.
 - Reason: The assumptions were spread over eight entries. A reader of the results needs the weak ones in one place.
 - Alternative rejected: A separate assumptions file. The owner asked for entries here.
+
+## 101. The two frozen zero-shot settings were scored on the test days once
+- Date: 2026-11-27, approved by the owner after the freeze and the validation results, in the words "run the test run for both zero-shot models"
+- Decision: The frozen settings were already committed (`978f516`), with their validation rows on experiments H and Q. Then `chronos2_84` and `timesfm25_84` were added to `backtest.test_models` (`8ad4156`), and `python -m epf.evaluation.backtest --model NAME --split test` was run once for each, for experiments H and Q. The Chronos-2 run started at 06:46 UTC on 2026-11-27 and the TimesFM run at 06:52 UTC. The six candidates that lost have not seen the test days. No entry was changed after the runs. Neither run is repeated without asking the owner.
+- Result: 90 test days, 2026-08-22 to 2026-11-19, 2161 hours and 8644 quarter-hours per zone. Each run passed its 56 checks, 4 for each of the seven zones on each experiment. The two tables are those that `python -m epf.evaluation.tables` prints for the test days. SE_1 and SE_2 are near-duplicates.
+
+Experiment H:
+
+| Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|
+| `lgbm_load_826_slow` | 0.4048 | 0.4854 | 0.5155 | 0.4752 | 0.4296 | 0.5061 | 0.4846 | 0.4716 |
+| `chronos2_84` | 0.4568 | 0.4773 | 0.5446 | 0.5426 | 0.5496 | 0.5242 | 0.4608 | 0.5080 |
+| `timesfm25_84` | 0.4807 | 0.5127 | 0.6070 | 0.5548 | 0.5563 | 0.5679 | 0.4936 | 0.5390 |
+| `mstl_182` | 0.4831 | 0.5151 | 0.6137 | 0.6439 | 0.6486 | 0.5499 | 0.5116 | 0.5666 |
+| `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+Experiment Q:
+
+| Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|
+| `lgbm_load_826_slow` | 0.4028 | 0.4789 | 0.5245 | 0.4936 | 0.4440 | 0.5030 | 0.5079 | 0.4792 |
+| `chronos2_84` | 0.4718 | 0.4914 | 0.5889 | 0.5945 | 0.5946 | 0.5344 | 0.4920 | 0.5382 |
+| `timesfm25_84` | 0.4915 | 0.5232 | 0.6433 | 0.5840 | 0.6008 | 0.5855 | 0.5236 | 0.5646 |
+| `mstl_182` | 0.4901 | 0.5182 | 0.6181 | 0.6496 | 0.6466 | 0.5512 | 0.5101 | 0.5691 |
+| `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+- Cost: The Chronos-2 command took 318 seconds and the TimesFM command 856 seconds, about 20 minutes together. The peak memory was 1064 MB and 2170 MB.
+- Checks after the runs: `backtest_core.csv` has 28 new lines and `daily_core.csv` has 2520, and no earlier line changed. The files now hold 350 and 23100 rows. The 28 saved forecast files passed 13 checks each with plain pandas: one value per market time unit, no empty cell, 90 delivery days, the 25 hours and 100 quarter-hours of 2026-10-25, the actual prices equal to the processed tables, and the MAE and the relative MAE equal to the saved rows. The `naive_mae` of the 28 new rows equals the MAE of the saved naive test rows.
+- Reading: The order of the four models is the same as on the validation days, on both experiments: `lgbm_load_826_slow`, `chronos2_84`, `timesfm25_84`, `mstl_182`. All means are lower than on the validation days, for the reason of entries 67 and 90: the price of 7 days before was a much worse forecast in the autumn. On experiment H the mean MAE of the naive forecast rose from 29.63 to 54.83 EUR/MWh, that of Chronos-2 from 16.17 to 27.28 and that of TimesFM from 18.34 to 29.07. So the models did not become more accurate. LightGBM is ahead of Chronos-2 by 0.0364 on H and by 0.0590 on Q, against 0.0235 and 0.0055 on the validation days. Chronos-2 is below LightGBM in FR and SE_4 on H, and in SE_4 on Q. TimesFM stays behind Chronos-2 by 0.0310 and 0.0264. It stays ahead of `mstl_182` by 0.0276 on H and by 0.0045 on Q, and on Q it is below `mstl_182` in SE_1 and SE_2 only.
+- Leakage: The lowest relative MAE of a new row is 0.4568, `chronos2_84` in DE_LU on experiment H. No mean is below 0.42 (PROJECT_CONTEXT §7), and no forecast equals its actual price. Both models read prices only, through the price cut whose tests fail when it moves (`docs/MODEL_NOTES.md`, "Chronos-2 zero-shot", section 9). The weights are older than the test days (entry 93).
+- Limits: The test numbers are known from now on. They must not steer any later choice, also not the question of a longer context (entry 100). No bootstrap was run on the test days, so the gaps have no interval, and the firmness command was not used there. No test forecast was made a second time. 7 of the 90 ES test days have no wind and no solar forecast. That touches LightGBM and not the two zero-shot models, which read prices only. The error of the clock-change day 2026-10-25 was not looked at separately. Entries 92 to 100 are still marked as proposed, although the owner has now had their frozen settings scored on the test days.

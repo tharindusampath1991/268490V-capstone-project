@@ -1742,16 +1742,16 @@ The commits behind the numbers of this section, of 26 and 27 Nov 2026:
 
 ## Chronos-2 zero-shot
 
-Wrapped, compared, frozen and scored on the validation days on 27 Nov 2026 (DECISIONS entries 92 to 100, proposed). The model is `src/epf/models/chronos2.py`. It reads the price history only and runs through the same backtest as the other models. Nothing is fitted on the prices of the project. After this work `reports/results/backtest_core.csv` holds 322 rows and `daily_core.csv` holds 20580.
+Wrapped, compared, frozen and scored on the validation days on 27 Nov 2026 (DECISIONS entries 92 to 100, proposed). The model is `src/epf/models/chronos2.py`. It reads the price history only and runs through the same backtest as the other models. Nothing is fitted on the prices of the project. After the validation runs `reports/results/backtest_core.csv` held 322 rows and `daily_core.csv` 20580. After the test run they hold 350 and 23100.
 
-No setting of this section was scored on the test days. SE_1 and SE_2 are near-duplicates (DECISIONS entry 48), so the seven zones are not seven independent results.
+The frozen setting was scored on the test days once, after the owner said yes (section 13). The three other settings were not. SE_1 and SE_2 are near-duplicates (DECISIONS entry 48), so the seven zones are not seven independent results.
 
 ### In short
 
 - The frozen setting is `chronos2_84`: `amazon/chronos-2` at the commit `29ec3766d36d6f73f0696f85560a422f50e8498c`, with the prices of the last 84 days as context. That is 2016 hours on the hourly table and 8064 quarter-hours on the 15-minute table.
 - It was chosen from four context lengths: 14, 28, 56 and 84 days. All four ran on the 60 validation days of experiment H for all seven zones. The rule was fixed and committed before the runs: the lowest mean relative MAE over the seven zones wins (entry 97).
 - The three longer contexts are a tie inside the noise of 60 days: 0.5551, 0.5584 and 0.5616. 14 days are clearly worse with 0.5946. The winner is the longest candidate, so the best length may lie above 84 days.
-- Mean relative MAE over the seven zones: 0.5551 on validation H and 0.5837 on validation Q. On the same days `lgbm_load_826_slow` has 0.5316 and 0.5782, and `mstl_182` has 0.6887 and 0.6831.
+- Mean relative MAE over the seven zones: 0.5551 on validation H, 0.5837 on validation Q, 0.5080 on test H and 0.5382 on test Q. `lgbm_load_826_slow` has 0.5316, 0.5782, 0.4716 and 0.4792 on the same days, and `mstl_182` has 0.6887, 0.6831, 0.5666 and 0.5691.
 - Chronos-2 reads prices only and is clearly ahead of `mstl_182`, which also reads prices only. Against the frozen LightGBM setting, which also reads the load, wind and solar forecasts, the gap is not settled on these 60 days: the bootstrap interval of the difference reaches from -0.0546 to +0.0038.
 - Time on the CPU: the four runs on experiment H took 205 seconds from start to end, and the run on experiment Q took 162 seconds. A forecast takes 0.075 to 0.140 seconds on the hourly table and 0.375 seconds on the 15-minute table. The peak memory was 1028 MB.
 
@@ -2183,7 +2183,7 @@ chronos2_84   Q DE_LU  2026-06-23  units 96  fresh minus saved, largest 0.0e+00 
 - The runs were made on the CPU of one laptop. Other processes ran on the machine, so the times are noisy. No GPU run was made.
 - The first run needs the network to fetch the weights. A run without a network was not tried.
 - Only `torch`, `chronos-forecasting` and `timesfm` are pinned. Their own dependencies are not.
-- The test days were not scored. That needs the owner's yes.
+- The test days were scored once, without a bootstrap. The gaps between the models on the test days have no interval (section 13).
 
 ### 12. How to run it again
 
@@ -2197,21 +2197,126 @@ chronos2_84   Q DE_LU  2026-06-23  units 96  fresh minus saved, largest 0.0e+00 
 
 - Any of the four names of section 4 can stand in place of `chronos2_84` in the backtest command. A run adds rows to `backtest_core.csv` and replaces the rows of the same model, experiment, split and zone in `daily_core.csv`.
 - The first run downloads 478 MB of weights to the Hugging Face cache of the user, outside the repo.
-- `--split test` is refused for every Chronos-2 setting. None stands under `backtest.test_models`.
+- Do not run `--model chronos2_84 --split test` again without asking. The test run was done once (section 13). The three other Chronos-2 settings are refused there.
 - The timing of section 3 and the checks of section 9 were made with scripts outside the repo. Their printed output is in this file.
+
+### 13. Test run
+
+`chronos2_84` on the 90 test days, experiments H and Q, run once on 27 Nov 2026 after the owner said yes (DECISIONS entry 101). The run started at 06:46:44 UTC. It passed 56 checks, 4 for each of the seven zones on each experiment. The command took 318 seconds. The test days hold the 25-hour day 2026-10-25, so one forecast has 25 hours or 100 quarter-hours. The three other Chronos-2 settings have not seen the test days.
+
+The tables of every model that has test rows, as `python -m epf.evaluation.tables --split test` prints them for `--experiment H` and `--experiment Q`:
+
+```
+Relative MAE, experiment H, test days, core zones
+
+| Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|
+| lgbm_load_826_slow | 0.4048 | 0.4854 | 0.5155 | 0.4752 | 0.4296 | 0.5061 | 0.4846 | 0.4716 |
+| chronos2_84 | 0.4568 | 0.4773 | 0.5446 | 0.5426 | 0.5496 | 0.5242 | 0.4608 | 0.5080 |
+| timesfm25_84 | 0.4807 | 0.5127 | 0.6070 | 0.5548 | 0.5563 | 0.5679 | 0.4936 | 0.5390 |
+| mstl_182 | 0.4831 | 0.5151 | 0.6137 | 0.6439 | 0.6486 | 0.5499 | 0.5116 | 0.5666 |
+| naive | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+Relative MAE, experiment Q, test days, core zones
+
+| Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|
+| lgbm_load_826_slow | 0.4028 | 0.4789 | 0.5245 | 0.4936 | 0.4440 | 0.5030 | 0.5079 | 0.4792 |
+| chronos2_84 | 0.4718 | 0.4914 | 0.5889 | 0.5945 | 0.5946 | 0.5344 | 0.4920 | 0.5382 |
+| timesfm25_84 | 0.4915 | 0.5232 | 0.6433 | 0.5840 | 0.6008 | 0.5855 | 0.5236 | 0.5646 |
+| mstl_182 | 0.4901 | 0.5182 | 0.6181 | 0.6496 | 0.6466 | 0.5512 | 0.5101 | 0.5691 |
+| naive | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+```
+
+Experiment H, per zone:
+
+| Zone | Relative MAE | MAE | RMSE | Naive MAE | Day loop (s) | Peak memory (MB) | Market time units |
+|---|---|---|---|---|---|---|---|
+| DE_LU | 0.4568 | 31.48 | 46.70 | 68.92 | 14.8 | 1010 | 2161 |
+| FR | 0.4773 | 30.24 | 45.49 | 63.37 | 10.8 | 1017 | 2161 |
+| ES | 0.5446 | 25.04 | 37.65 | 45.97 | 11.5 | 1022 | 2161 |
+| SE_1 | 0.5426 | 16.96 | 29.50 | 31.25 | 11.3 | 1026 | 2161 |
+| SE_2 | 0.5496 | 20.03 | 33.95 | 36.44 | 11.3 | 1030 | 2161 |
+| SE_3 | 0.5242 | 30.36 | 42.22 | 57.91 | 11.3 | 1033 | 2161 |
+| SE_4 | 0.4608 | 36.84 | 53.55 | 79.95 | 11.4 | 1037 | 2161 |
+| Mean | 0.5080 | 27.28 | 41.30 | 54.83 |  |  |  |
+
+Experiment Q, per zone:
+
+| Zone | Relative MAE | MAE | RMSE | Naive MAE | Day loop (s) | Peak memory (MB) | Market time units |
+|---|---|---|---|---|---|---|---|
+| DE_LU | 0.4718 | 32.68 | 49.45 | 69.26 | 32.1 | 1060 | 8644 |
+| FR | 0.4914 | 31.43 | 46.46 | 63.96 | 32.0 | 1064 | 8644 |
+| ES | 0.5889 | 27.34 | 42.13 | 46.42 | 31.7 | 1064 | 8644 |
+| SE_1 | 0.5945 | 19.01 | 32.73 | 31.98 | 32.0 | 1064 | 8644 |
+| SE_2 | 0.5946 | 22.09 | 37.42 | 37.16 | 31.9 | 1064 | 8644 |
+| SE_3 | 0.5344 | 31.17 | 43.92 | 58.33 | 32.5 | 1064 | 8644 |
+| SE_4 | 0.4920 | 39.69 | 58.46 | 80.67 | 32.1 | 1064 | 8644 |
+| Mean | 0.5382 | 29.06 | 44.37 | 55.39 |  |  |  |
+
+- The mean relative MAE is 0.5080 on H and 0.5382 on Q. On the validation days it was 0.5551 and 0.5837.
+- The test values are lower for the reason of DECISIONS entries 67 and 90: the naive forecast was much worse in the autumn. On experiment H its mean MAE rose from 29.63 to 54.83 EUR/MWh, and that of Chronos-2 from 16.17 to 27.28. So the model did not become more accurate.
+- The order of the four models is the same as on the validation days, on both experiments: `lgbm_load_826_slow`, `chronos2_84`, `timesfm25_84`, `mstl_182`.
+- LightGBM is ahead of Chronos-2 by 0.0364 on H and by 0.0590 on Q. On the validation days the gaps were 0.0235 and 0.0055. Chronos-2 is below LightGBM in FR and SE_4 on H, and in SE_4 on Q. No bootstrap was run on the test days, so these gaps have no interval.
+- Chronos-2 is below TimesFM in all seven zones on H, and in six on Q, all but SE_1.
+- The day loops sum to 82.4 seconds on H and to 224.3 seconds on Q. The peak memory was 1064 MB.
+- 7 of the 90 ES test days, 6 to 12 Nov 2026, have no wind and no solar forecast. Chronos-2 reads prices only, so its ES values do not depend on them.
+
+Checks after the run, for both zero-shot models:
+
+- `backtest_core.csv` has 28 new lines and `daily_core.csv` has 2520, and no earlier line changed. The files now hold 350 and 23100 rows.
+- The 28 saved test forecast files passed the 13 checks of section 9, with 90 delivery days and the count of each day compared with its market time units. The `naive_mae` of each new row equals the MAE of the saved naive test row, and each model has one test run.
+- The lowest relative MAE of a new row is 0.4568, `chronos2_84` in DE_LU on experiment H. No mean is below 0.42, and no forecast equals its actual price.
+- No test forecast was made a second time, and the firmness command was not run on the test days.
+
+```
+test days 2026-08-22 to 2026-11-19, 90 days, zones ['DE_LU', 'FR', 'ES', 'SE_1', 'SE_2', 'SE_3', 'SE_4']
+chronos2_84   H DE_LU  rows  2161  longest day  25  forecast    -9.20 to   462.21  actual   -19.00 to   697.31  equal to actual 0  all 13 checks pass
+chronos2_84   H FR     rows  2161  longest day  25  forecast    -4.04 to   432.45  actual    -3.93 to   533.64  equal to actual 0  all 13 checks pass
+chronos2_84   H ES     rows  2161  longest day  25  forecast    -3.08 to   303.60  actual    -2.10 to   319.45  equal to actual 0  all 13 checks pass
+chronos2_84   H SE_1   rows  2161  longest day  25  forecast     1.47 to   153.26  actual    -2.17 to   250.02  equal to actual 0  all 13 checks pass
+chronos2_84   H SE_2   rows  2161  longest day  25  forecast    -0.07 to   150.95  actual    -4.04 to   297.84  equal to actual 0  all 13 checks pass
+chronos2_84   H SE_3   rows  2161  longest day  25  forecast     1.10 to   422.06  actual    -4.30 to   465.15  equal to actual 0  all 13 checks pass
+chronos2_84   H SE_4   rows  2161  longest day  25  forecast     2.34 to   499.31  actual    -1.25 to   737.80  equal to actual 0  all 13 checks pass
+chronos2_84   Q DE_LU  rows  8644  longest day 100  forecast    -2.69 to   545.47  actual   -19.00 to   740.01  equal to actual 0  all 13 checks pass
+chronos2_84   Q FR     rows  8644  longest day 100  forecast    -0.35 to   391.14  actual    -4.90 to   624.18  equal to actual 0  all 13 checks pass
+chronos2_84   Q ES     rows  8644  longest day 100  forecast    -0.04 to   317.73  actual    -2.10 to   326.49  equal to actual 0  all 13 checks pass
+chronos2_84   Q SE_1   rows  8644  longest day 100  forecast     0.28 to   158.41  actual    -2.67 to   278.15  equal to actual 0  all 13 checks pass
+chronos2_84   Q SE_2   rows  8644  longest day 100  forecast    -1.60 to   165.50  actual    -4.62 to   337.83  equal to actual 0  all 13 checks pass
+chronos2_84   Q SE_3   rows  8644  longest day 100  forecast    -0.53 to   402.53  actual    -5.05 to   499.23  equal to actual 0  all 13 checks pass
+chronos2_84   Q SE_4   rows  8644  longest day 100  forecast     0.83 to   442.00  actual    -1.68 to   797.48  equal to actual 0  all 13 checks pass
+timesfm25_84  H DE_LU  rows  2161  longest day  25  forecast   -35.89 to   369.80  actual   -19.00 to   697.31  equal to actual 0  all 13 checks pass
+timesfm25_84  H FR     rows  2161  longest day  25  forecast   -44.56 to   349.80  actual    -3.93 to   533.64  equal to actual 0  all 13 checks pass
+timesfm25_84  H ES     rows  2161  longest day  25  forecast   -20.76 to   313.04  actual    -2.10 to   319.45  equal to actual 0  all 13 checks pass
+timesfm25_84  H SE_1   rows  2161  longest day  25  forecast    -3.03 to   118.99  actual    -2.17 to   250.02  equal to actual 0  all 13 checks pass
+timesfm25_84  H SE_2   rows  2161  longest day  25  forecast    -3.92 to   140.01  actual    -4.04 to   297.84  equal to actual 0  all 13 checks pass
+timesfm25_84  H SE_3   rows  2161  longest day  25  forecast    -9.94 to   321.11  actual    -4.30 to   465.15  equal to actual 0  all 13 checks pass
+timesfm25_84  H SE_4   rows  2161  longest day  25  forecast   -17.61 to   405.18  actual    -1.25 to   737.80  equal to actual 0  all 13 checks pass
+timesfm25_84  Q DE_LU  rows  8644  longest day 100  forecast   -18.70 to   444.20  actual   -19.00 to   740.01  equal to actual 0  all 13 checks pass
+timesfm25_84  Q FR     rows  8644  longest day 100  forecast   -21.13 to   361.88  actual    -4.90 to   624.18  equal to actual 0  all 13 checks pass
+timesfm25_84  Q ES     rows  8644  longest day 100  forecast   -17.48 to   303.84  actual    -2.10 to   326.49  equal to actual 0  all 13 checks pass
+timesfm25_84  Q SE_1   rows  8644  longest day 100  forecast    -0.74 to   152.90  actual    -2.67 to   278.15  equal to actual 0  all 13 checks pass
+timesfm25_84  Q SE_2   rows  8644  longest day 100  forecast    -2.93 to   199.51  actual    -4.62 to   337.83  equal to actual 0  all 13 checks pass
+timesfm25_84  Q SE_3   rows  8644  longest day 100  forecast    -3.12 to   384.01  actual    -5.05 to   499.23  equal to actual 0  all 13 checks pass
+timesfm25_84  Q SE_4   rows  8644  longest day 100  forecast    -5.10 to   486.23  actual    -1.68 to   797.48  equal to actual 0  all 13 checks pass
+
+28 files, 0 failed checks
+```
+
+The test numbers are known from now on. They must not steer any later choice. Do not run `--model chronos2_84 --split test` again without asking.
 
 ## TimesFM 2.5 zero-shot
 
 Wrapped, compared, frozen and scored on the validation days on 27 Nov 2026, together with Chronos-2 (DECISIONS entries 92 to 100, proposed). The model is `src/epf/models/timesfm25.py`. It reads the price history only and runs through the same backtest. Nothing is fitted on the prices of the project. The context, the candidates, the rule, the machine and the timing before the runs are those of the section "Chronos-2 zero-shot", and are not repeated here.
 
-No setting of this section was scored on the test days. SE_1 and SE_2 are near-duplicates (DECISIONS entry 48).
+The frozen setting was scored on the test days once, after the owner said yes (section 11). The three other settings were not. SE_1 and SE_2 are near-duplicates (DECISIONS entry 48).
 
 ### In short
 
 - The frozen setting is `timesfm25_84`: `google/timesfm-2.5-200m-pytorch` at the commit `1d952420fba87f3c6dee4f240de0f1a0fbc790e3`, with the prices of the last 84 days as context.
 - `infer_is_positive` is false, because prices go negative. The other options are fixed and were not tuned (entry 96).
 - It was chosen from the same four context lengths, by the same rule. The three longer contexts are a tie inside the noise: 0.6298, 0.6360 and 0.6400. 14 days are clearly worse with 0.6558.
-- Mean relative MAE over the seven zones: 0.6298 on validation H and 0.6440 on validation Q.
+- Mean relative MAE over the seven zones: 0.6298 on validation H, 0.6440 on validation Q, 0.5390 on test H and 0.5646 on test Q.
 - TimesFM is clearly behind Chronos-2, which has 0.5551 and 0.5837, and clearly ahead of `mstl_182` on experiment H, which has 0.6887. All three read the price history only.
 - Time on the CPU: the four runs on experiment H took 506 seconds from start to end, and the run on experiment Q took 394 seconds. A forecast takes 0.214 to 0.366 seconds on the hourly table and 0.926 seconds on the 15-minute table. The peak memory was 2173 MB.
 
@@ -2550,7 +2655,46 @@ The limits of section 11 of "Chronos-2 zero-shot" hold here too, with 0.6298 as 
 
 - Any of the four TimesFM names can stand in place of `timesfm25_84` in the backtest command.
 - The first run downloads 925 MB of weights to the Hugging Face cache of the user, outside the repo.
-- `--split test` is refused for every TimesFM setting. None stands under `backtest.test_models`.
+- Do not run `--model timesfm25_84 --split test` again without asking. The test run was done once (section 11). The three other TimesFM settings are refused there.
+
+### 11. Test run
+
+`timesfm25_84` on the 90 test days, experiments H and Q, run once on 27 Nov 2026 after the owner said yes (DECISIONS entry 101). The run started at 06:52:02 UTC. It passed 56 checks, 4 for each of the seven zones on each experiment. The command took 856 seconds. The three other TimesFM settings have not seen the test days. The tables of the table command and the checks after the run are in section 13 of "Chronos-2 zero-shot".
+
+Experiment H, per zone:
+
+| Zone | Relative MAE | MAE | RMSE | Naive MAE | Day loop (s) | Peak memory (MB) | Market time units |
+|---|---|---|---|---|---|---|---|
+| DE_LU | 0.4807 | 33.13 | 47.60 | 68.92 | 37.1 | 2170 | 2161 |
+| FR | 0.5127 | 32.49 | 46.27 | 63.37 | 34.1 | 2170 | 2161 |
+| ES | 0.6070 | 27.91 | 40.09 | 45.97 | 34.3 | 2170 | 2161 |
+| SE_1 | 0.5548 | 17.34 | 29.37 | 31.25 | 33.8 | 2170 | 2161 |
+| SE_2 | 0.5563 | 20.27 | 33.87 | 36.44 | 33.6 | 2170 | 2161 |
+| SE_3 | 0.5679 | 32.89 | 45.10 | 57.91 | 34.7 | 2170 | 2161 |
+| SE_4 | 0.4936 | 39.46 | 55.72 | 79.95 | 36.3 | 2170 | 2161 |
+| Mean | 0.5390 | 29.07 | 42.57 | 54.83 |  |  |  |
+
+Experiment Q, per zone:
+
+| Zone | Relative MAE | MAE | RMSE | Naive MAE | Day loop (s) | Peak memory (MB) | Market time units |
+|---|---|---|---|---|---|---|---|
+| DE_LU | 0.4915 | 34.04 | 50.14 | 69.26 | 82.6 | 2170 | 8644 |
+| FR | 0.5232 | 33.46 | 48.22 | 63.96 | 83.9 | 2170 | 8644 |
+| ES | 0.6433 | 29.86 | 43.18 | 46.42 | 88.1 | 2170 | 8644 |
+| SE_1 | 0.5840 | 18.67 | 31.71 | 31.98 | 102.6 | 2170 | 8644 |
+| SE_2 | 0.6008 | 22.32 | 37.44 | 37.16 | 79.9 | 2170 | 8644 |
+| SE_3 | 0.5855 | 34.15 | 47.53 | 58.33 | 78.9 | 2170 | 8644 |
+| SE_4 | 0.5236 | 42.24 | 60.27 | 80.67 | 83.2 | 2170 | 8644 |
+| Mean | 0.5646 | 30.68 | 45.50 | 55.39 |  |  |  |
+
+- The mean relative MAE is 0.5390 on H and 0.5646 on Q. On the validation days it was 0.6298 and 0.6440.
+- The test values are lower because the naive forecast was much worse in the autumn. On experiment H its mean MAE rose from 29.63 to 54.83 EUR/MWh, and that of TimesFM from 18.34 to 29.07.
+- TimesFM stays behind Chronos-2: by 0.0310 on H and by 0.0264 on Q. On the validation days the gaps were 0.0747 and 0.0603.
+- TimesFM stays ahead of `mstl_182` in the mean, but the gap shrank: 0.0276 on H and 0.0045 on Q, against 0.0589 and 0.0391 on the validation days. On H it is below `mstl_182` in six zones, all but SE_3. On Q it is below `mstl_182` in SE_1 and SE_2 only.
+- No bootstrap was run on the test days, so these gaps have no interval.
+- The day loops sum to 243.8 seconds on H and to 599.2 seconds on Q. The peak memory was 2170 MB.
+
+The test numbers are known from now on. They must not steer any later choice. Do not run `--model timesfm25_84 --split test` again without asking.
 
 The commits behind the numbers of the two zero-shot sections, of 27 Nov 2026:
 
@@ -2561,3 +2705,5 @@ The commits behind the numbers of the two zero-shot sections, of 27 Nov 2026:
 | `3428808` | `src/epf/models/timesfm25.py` and its tests |
 | `95b65b6` | the eight candidates in the config and the rule, before any validation run |
 | `978f516` | the 70 results rows and the two frozen settings |
+| `8ad4156` | the two frozen settings added to `backtest.test_models`, before the test run |
+| `b84c615` | the 28 test rows |

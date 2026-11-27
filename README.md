@@ -150,7 +150,7 @@ Once the tables are built, this scores the seasonal naive forecast on the 60 val
 - Results go to `reports/results/`, which is committed. Its three files cover all seven zones. `backtest_core.csv` holds one row per run, zone and experiment. Each row has the metrics, the config entry of the model, the seed, the run time, the peak memory and the hardware. The `features` section of the config is not in the row. `daily_core.csv` holds the losses per delivery day. `quantile_core.csv` holds the scores of the quantile forecasts (see "LightGBM" below).
 - A run adds rows to `backtest_core.csv`, so a second run shows as a second set of rows.
 - Forecasts per market time unit are saved under `data/forecasts/`, which git ignores.
-- `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config: the naive forecast, `mstl_182`, the statistical baseline, and `lgbm_load_826_slow`, the LightGBM model (DECISIONS entries 50, 58, 67 and 90). Each of the three test runs was done once, on 24, 25 and 26 Nov 2026. None of them is run again.
+- `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config: the naive forecast, `mstl_182`, the statistical baseline, `lgbm_load_826_slow`, the LightGBM model, and the two zero-shot settings `chronos2_84` and `timesfm25_84` (DECISIONS entries 50, 58, 67, 90 and 101). Each of the five test runs was done once, between 24 and 27 Nov 2026. None of them is run again.
 
 MAE and RMSE are in EUR/MWh. Price levels differ several-fold between zones, so zones are compared on relative MAE only.
 
@@ -338,7 +338,26 @@ Relative MAE on the 60 validation days, from the table command. The naive foreca
 - Chronos-2 is clearly ahead of TimesFM, in all seven zones on experiment H.
 - Chronos-2 against the LightGBM model is not settled on these 60 days. LightGBM also reads the load, wind and solar forecasts and is ahead in the mean, but the bootstrap interval of the difference holds zero. Chronos-2 is lower in FR, ES and SE_1 on experiment H.
 - SE1 and SE2 are near-duplicates.
-- Neither zero-shot model has been scored on the test days. `--split test` is refused for all eight settings.
+
+Relative MAE on the 90 test days. Each zero-shot test run was done once, on 27 Nov 2026 (DECISIONS entry 101). The six settings that lost are refused on the test days.
+
+| Experiment | Model | DE_LU | FR | ES | SE_1 | SE_2 | SE_3 | SE_4 | Mean |
+|---|---|---|---|---|---|---|---|---|---|
+| H | `lgbm_load_826_slow` | 0.4048 | 0.4854 | 0.5155 | 0.4752 | 0.4296 | 0.5061 | 0.4846 | 0.4716 |
+| H | `chronos2_84` | 0.4568 | 0.4773 | 0.5446 | 0.5426 | 0.5496 | 0.5242 | 0.4608 | 0.5080 |
+| H | `timesfm25_84` | 0.4807 | 0.5127 | 0.6070 | 0.5548 | 0.5563 | 0.5679 | 0.4936 | 0.5390 |
+| H | `mstl_182` | 0.4831 | 0.5151 | 0.6137 | 0.6439 | 0.6486 | 0.5499 | 0.5116 | 0.5666 |
+| H | `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+| Q | `lgbm_load_826_slow` | 0.4028 | 0.4789 | 0.5245 | 0.4936 | 0.4440 | 0.5030 | 0.5079 | 0.4792 |
+| Q | `chronos2_84` | 0.4718 | 0.4914 | 0.5889 | 0.5945 | 0.5946 | 0.5344 | 0.4920 | 0.5382 |
+| Q | `timesfm25_84` | 0.4915 | 0.5232 | 0.6433 | 0.5840 | 0.6008 | 0.5855 | 0.5236 | 0.5646 |
+| Q | `mstl_182` | 0.4901 | 0.5182 | 0.6181 | 0.6496 | 0.6466 | 0.5512 | 0.5101 | 0.5691 |
+| Q | `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
+
+- The order of the four models is the same as on the validation days, on both experiments.
+- All test values are lower than the validation values because the naive forecast was much worse on the test days. On experiment H its mean MAE rose from 29.63 to 54.83 EUR/MWh, that of Chronos-2 from 16.17 to 27.28 and that of TimesFM from 18.34 to 29.07.
+- LightGBM is ahead of Chronos-2 by 0.0364 on H and by 0.0590 on Q. No bootstrap was run on the test days, so these gaps have no interval.
+- 7 of the 90 ES test days have no wind and no solar forecast. The two zero-shot models read prices only, so their ES values do not depend on them.
 
 This prints how firm each choice is:
 
