@@ -62,7 +62,7 @@ from epf.evaluation.cutoff import (
 from epf.evaluation.metrics import daily_losses, mae, relative_mae, rmse
 from epf.features.builder import feature_settings
 from epf.features.holiday_calendar import holiday_dates
-from epf.models import chronos2, lgbm
+from epf.models import chronos2, lgbm, timesfm25
 from epf.models.naive import SeasonalNaive
 from epf.models.stats import StatsModel
 from epf.models.zero_shot import source_settings
@@ -169,13 +169,14 @@ def build_model(config: dict, name: str) -> Model:
     also gets the feature settings, the columns under each cut, the weather
     rule and the seed of the config, and only such an entry needs the
     sections features and open_meteo. An entry of the family chronos2 is
-    Chronos-2 zero-shot. It also gets its section under foundation_models
-    and the seed of the config. An entry of any other family is a
-    statistical model.
+    Chronos-2 zero-shot and one of the family timesfm25 is TimesFM 2.5
+    zero-shot. Such an entry also gets the section of its family under
+    foundation_models and the seed of the config. An entry of any other
+    family is a statistical model.
     Raises ValueError for a name that has no entry, for an entry without a
         family, for an lgbm entry in a config without one of its two
-        sections, for a chronos2 entry in a config without its section
-        and for settings that the model refuses.
+        sections, for a chronos2 or timesfm25 entry in a config without
+        its section and for settings that the model refuses.
     """
     entries = config["models"]
     if name not in entries:
@@ -187,6 +188,10 @@ def build_model(config: dict, name: str) -> Model:
     if entries[name]["family"] == chronos2.FAMILY:
         return chronos2.Chronos2Model(name, entries[name],
                                       source_settings(config, chronos2.FAMILY), set_seed(config))
+    if entries[name]["family"] == timesfm25.FAMILY:
+        return timesfm25.TimesFm25Model(name, entries[name],
+                                        source_settings(config, timesfm25.FAMILY),
+                                        set_seed(config))
     if entries[name]["family"] == lgbm.FAMILY:
         missing = [section for section in ("features", "open_meteo") if section not in config]
         if missing:

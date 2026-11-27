@@ -144,6 +144,19 @@ foundation_models:
     model_id: amazon/chronos-2
     revision: 29ec3766d36d6f73f0696f85560a422f50e8498c
     device: cpu   # this laptop has no GPU that torch can use
+  timesfm25:
+    model_id: google/timesfm-2.5-200m-pytorch
+    revision: 1d952420fba87f3c6dee4f240de0f1a0fbc790e3
+    # torch.compile needs a C++ compiler. This laptop has none, and with true the first
+    # forecast ends with "Compiler: cl is not found".
+    torch_compile: false
+    # Options of timesfm.ForecastConfig. They are fixed and were not tuned.
+    max_horizon: 128              # one output patch of the model. The longest day has 100 quarter-hours.
+    normalize_inputs: true        # as in the example of the model card
+    force_flip_invariance: true   # as in the example of the model card, and the default
+    # Must be false. With true TimesFM cuts every forecast at 0 when its context holds no
+    # negative price, and prices can be negative.
+    infer_is_positive: false
 
 # Model settings, copied into every results row. --model of the backtest takes a name from here.
 models:
