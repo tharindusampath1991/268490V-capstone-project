@@ -1,5 +1,7 @@
 # Direct dependencies only, pinned. Add a package when the code first imports it.
 # Python 3.12: entsoe-py 1.0.0 requires Python 3.12 or newer.
+# Chronos-2 (amazon/chronos-2). It brings transformers, accelerate and huggingface_hub.
+chronos-forecasting==2.3.2
 entsoe-py==1.0.0
 holidays==0.109
 # Not imported by the code. nbconvert needs it as the kernel that runs the EDA notebooks.
@@ -24,6 +26,12 @@ PyYAML==6.0.3
 requests==2.34.2
 seaborn==0.13.2
 statsforecast==2.1.1
+# TimesFM 2.5 (google/timesfm-2.5-200m-pytorch). The package version is not the model
+# version: package 3.0.2 holds the TimesFM 2.5 code under timesfm.timesfm_2p5. The torch
+# extra names torch as its backend.
+timesfm[torch]==3.0.2
+# Runs both foundation models. On Windows the wheel on PyPI is the CPU build (2.15.0+cpu).
+torch==2.15.0
 
 # The project's own package (src/epf), installed in editable mode.
 -e .
