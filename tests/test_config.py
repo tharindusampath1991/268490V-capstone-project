@@ -1,5 +1,6 @@
 """Tests for the config loader. They use no network and no data files."""
 
+import re
 from datetime import date
 from pathlib import Path
 
@@ -159,12 +160,12 @@ def test_project_config_builds_every_model_entry_under_its_own_name():
         assert build_model(config, name).name == name
 
 
-def test_project_config_holds_candidates_of_the_statistical_families_and_lightgbm():
+def test_project_config_holds_candidates_of_every_model_family():
     entries = load_config()["models"].values()
 
     families = {entry["family"] for entry in entries if "family" in entry}
 
-    assert families == {"arima", "ets", "mstl", "lgbm"}
+    assert families == {"arima", "ets", "mstl", "lgbm", "chronos2", "timesfm25"}
 
 
 PRICE_GROUPS = ["price", "calendar"]
@@ -269,3 +270,53 @@ def test_project_config_builds_a_quantile_model_from_the_frozen_lightgbm_entry()
     assert model.levels == (0.05, 0.25, 0.5, 0.75, 0.95)
     assert model.features == build_model(config, name).features
     assert model.seed == config["seed"]
+
+
+ZERO_SHOT_FAMILIES = ("chronos2", "timesfm25")
+
+# The zero-shot candidates: the same four context lengths for both models.
+ZERO_SHOT_CANDIDATES = {
+    "chronos2_14": {"family": "chronos2", "context_days": 14},
+    "chronos2_28": {"family": "chronos2", "context_days": 28},
+    "chronos2_56": {"family": "chronos2", "context_days": 56},
+    "chronos2_84": {"family": "chronos2", "context_days": 84},
+    "timesfm25_14": {"family": "timesfm25", "context_days": 14},
+    "timesfm25_28": {"family": "timesfm25", "context_days": 28},
+    "timesfm25_56": {"family": "timesfm25", "context_days": 56},
+    "timesfm25_84": {"family": "timesfm25", "context_days": 84},
+}
+
+
+def test_project_config_holds_the_zero_shot_candidates():
+    models = load_config()["models"]
+
+    found = {name: entry for name, entry in models.items()
+             if entry.get("family") in ZERO_SHOT_FAMILIES}
+
+    assert found == ZERO_SHOT_CANDIDATES
+
+
+def test_project_config_pins_each_foundation_model_to_a_full_commit_hash():
+    sections = load_config()["foundation_models"]
+
+    assert set(sections) == set(ZERO_SHOT_FAMILIES)
+    for section in sections.values():
+        # A branch name such as main can move. A full commit hash cannot.
+        assert re.fullmatch(r"[0-9a-f]{40}", section["revision"])
+
+
+def test_every_zero_shot_candidate_fits_its_model_on_the_15_minute_table():
+    config = load_config()
+    max_horizon = config["foundation_models"]["timesfm25"]["max_horizon"]
+    # Read from the loaded models on 2026-11-27: Chronos-2 takes a context of 8192 steps,
+    # and TimesFM 2.5 takes 16384 steps for the context and the horizon together.
+    for entry in config["models"].values():
+        steps = entry.get("context_days", 0) * 96
+        if entry.get("family") == "chronos2":
+            assert steps <= 8192
+        if entry.get("family") == "timesfm25":
+            assert steps + max_horizon <= 16384
+
+
+def test_project_config_forbids_timesfm_to_cut_a_forecast_at_zero():
+    assert load_config()["foundation_models"]["timesfm25"]["infer_is_positive"] is False

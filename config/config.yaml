@@ -226,6 +226,24 @@ models:
   lgbm_load_826_leaves15: {family: lgbm, objective: regression, trees: 100, params: {num_leaves: 15}, history_days: 826,
                            groups: [price, calendar, load_forecast, wind_forecast, solar_forecast, actual_load]}
 
+  # Candidates for the two zero-shot foundation models, compared on the validation days of
+  # all seven zones on experiment H. They read the price history only and are not fitted.
+  # The model ID, the revision and the fixed options are under foundation_models above.
+  #   family        chronos2 (Chronos-2) or timesfm25 (TimesFM 2.5)
+  #   context_days  the days of prices before the delivery day that the model reads. One
+  #                 day is 24 hourly or 96 quarter-hour steps, so an entry covers the same
+  #                 days on both tables.
+  # All four lengths are whole weeks. 14 days hold the weekly season twice. 84 days are
+  # 8064 quarter-hours, the most whole weeks inside the 8192 steps that Chronos-2 reads.
+  chronos2_14: {family: chronos2, context_days: 14}
+  chronos2_28: {family: chronos2, context_days: 28}
+  chronos2_56: {family: chronos2, context_days: 56}
+  chronos2_84: {family: chronos2, context_days: 84}
+  timesfm25_14: {family: timesfm25, context_days: 14}
+  timesfm25_28: {family: timesfm25, context_days: 28}
+  timesfm25_56: {family: timesfm25, context_days: 56}
+  timesfm25_84: {family: timesfm25, context_days: 84}
+
 # EDA 1 (docs/DECISIONS.md, entry 38). An hour is a spike when its price is above the mean
 # plus spike_sd standard deviations of the spike_window_days days before it. Both numbers
 # are conventions. They were not tuned.
