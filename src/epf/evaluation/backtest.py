@@ -62,9 +62,10 @@ from epf.evaluation.cutoff import (
 from epf.evaluation.metrics import daily_losses, mae, relative_mae, rmse
 from epf.features.builder import feature_settings
 from epf.features.holiday_calendar import holiday_dates
-from epf.models import lgbm
+from epf.models import chronos2, lgbm
 from epf.models.naive import SeasonalNaive
 from epf.models.stats import StatsModel
+from epf.models.zero_shot import source_settings
 from epf.seed import set_seed
 
 FORECAST = "forecast"
@@ -167,11 +168,14 @@ def build_model(config: dict, name: str) -> Model:
     names its family. An entry of the family lgbm is the LightGBM model. It
     also gets the feature settings, the columns under each cut, the weather
     rule and the seed of the config, and only such an entry needs the
-    sections features and open_meteo. An entry of any other family is a
+    sections features and open_meteo. An entry of the family chronos2 is
+    Chronos-2 zero-shot. It also gets its section under foundation_models
+    and the seed of the config. An entry of any other family is a
     statistical model.
     Raises ValueError for a name that has no entry, for an entry without a
         family, for an lgbm entry in a config without one of its two
-        sections and for settings that the model refuses.
+        sections, for a chronos2 entry in a config without its section
+        and for settings that the model refuses.
     """
     entries = config["models"]
     if name not in entries:
@@ -180,6 +184,9 @@ def build_model(config: dict, name: str) -> Model:
         return SeasonalNaive(entries[name]["lag_days"])
     if "family" not in entries[name]:
         raise ValueError(f"The model entry '{name}' names no family.")
+    if entries[name]["family"] == chronos2.FAMILY:
+        return chronos2.Chronos2Model(name, entries[name],
+                                      source_settings(config, chronos2.FAMILY), set_seed(config))
     if entries[name]["family"] == lgbm.FAMILY:
         missing = [section for section in ("features", "open_meteo") if section not in config]
         if missing:
