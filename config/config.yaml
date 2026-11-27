@@ -96,7 +96,7 @@ backtest:
   # The zero-shot settings of Chronos-2 and of TimesFM 2.5, frozen on 2026-11-27
   # (docs/DECISIONS.md, entry 98). Of the four candidates of its model under models, each had
   # the lowest mean relative MAE over the seven zones on the validation days of experiment H.
-  # Never change them. Neither has been scored on the test days.
+  # Never change them. Each was scored on the test days once, on 2026-11-27 (entry 101).
   chronos2_model: chronos2_84
   timesfm25_model: timesfm25_84
   # Levels of the quantile forecasts of the frozen LightGBM setting. A level and its mirror
@@ -106,7 +106,10 @@ backtest:
   # mstl_182 was added on 2026-11-25, after it was frozen and the owner said yes.
   # lgbm_load_826_slow was added on 2026-11-26, after it was frozen and the owner said yes
   # (docs/DECISIONS.md, entry 90).
-  test_models: [naive, mstl_182, lgbm_load_826_slow]
+  # chronos2_84 and timesfm25_84 were added on 2026-11-27, after they were frozen and the
+  # owner said yes (docs/DECISIONS.md, entry 101). The six zero-shot candidates that lost
+  # stay refused.
+  test_models: [naive, mstl_182, lgbm_load_826_slow, chronos2_84, timesfm25_84]
   price_column: price             # known through the end of D-1
   day_ahead_columns:              # day-ahead forecasts, known through the end of D
     - load_forecast

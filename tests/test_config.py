@@ -131,7 +131,8 @@ def test_project_config_opens_the_test_days_to_naive_and_the_frozen_models_only(
     backtest = load_config()["backtest"]
 
     assert backtest["test_models"] == ["naive", backtest["statistical_baseline"],
-                                       backtest["lightgbm_model"]]
+                                       backtest["lightgbm_model"], backtest["chronos2_model"],
+                                       backtest["timesfm25_model"]]
 
 
 def test_project_config_keeps_the_forecasts_under_the_folder_that_git_ignores():
@@ -332,7 +333,7 @@ def test_project_config_names_the_frozen_setting_of_each_zero_shot_model(key, fa
     assert build_model(config, name).name == name
 
 
-def test_project_config_opens_the_test_days_to_no_zero_shot_setting():
+def test_project_config_opens_the_test_days_to_no_zero_shot_setting_that_lost():
     test_models = load_config()["backtest"]["test_models"]
 
-    assert not set(test_models) & set(ZERO_SHOT_CANDIDATES)
+    assert set(test_models) & set(ZERO_SHOT_CANDIDATES) == {"chronos2_84", "timesfm25_84"}
