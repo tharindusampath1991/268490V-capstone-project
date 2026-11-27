@@ -5,7 +5,9 @@ Usage, from the repo root:
 
 Options:
     --experiment   a key of EXPERIMENTS. Without it the first one
-    --split        validation or test. Without it validation
+    --split        validation or test. Without it validation. The test days
+                   are open only when every model of --models stands under
+                   backtest.test_models
     --without      a zone key. Adds block 5, the mean without that zone
     --bootstrap    the models of the bootstrap lines. Without it every model
                    but the winner
@@ -60,7 +62,14 @@ import pandas as pd
 from epf.config import GROUP_ORDER, REPO_ROOT, load_config, ordered_zones
 from epf.data.splits import TEST, VALIDATION, split_range
 from epf.evaluation import results
-from epf.evaluation.backtest import ACTUAL, DAY_FORMAT, EXPERIMENTS, FORECAST, read_table
+from epf.evaluation.backtest import (
+    ACTUAL,
+    DAY_FORMAT,
+    EXPERIMENTS,
+    FORECAST,
+    check_split_allowed,
+    read_table,
+)
 from epf.evaluation.tables import newest_rows, selected_rows
 from epf.models.naive import SeasonalNaive
 from epf.seed import set_seed
@@ -228,7 +237,10 @@ def read_files(config: dict, group: str, zone_keys: list[str], request: Request)
         model. The saved backtest rows are those of the models of the
         request alone, since only they are compared with the forecast files.
     Raises FileNotFoundError when a file does not exist and ValueError when a
-        results file lacks a row or holds one twice.
+        results file lacks a row or holds one twice. A missing saved
+        backtest row of the reference model raises only when the reference
+        is among the models of the request. Its daily rows and its forecast
+        files are always needed.
     """
     models = with_reference(request.models)
     experiment, split = request.experiment, request.split
@@ -298,9 +310,12 @@ def largest_relative_difference(new: pd.Series, old: pd.Series) -> float:
     """Return the largest |new - old| / |old| of two series.
 
     Output: NaN when a value is empty or stands in one of the series only,
-        so that a missing value is not passed over as no difference.
+        so that a missing value is not passed over as no difference. Two
+        equal values have a difference of 0, also when both are 0.
     """
-    return float(((new - old).abs() / old.abs()).max(skipna=False))
+    absolute = (new - old).abs()
+    relative = (absolute / old.abs()).where(absolute != 0, 0.0)
+    return float(relative.max(skipna=False))
 
 
 def difference_to_saved(new: pd.DataFrame, saved: pd.DataFrame) -> float:
@@ -750,6 +765,18 @@ def check_request(request: Request, zone_keys: list[str]) -> None:
         raise ValueError("--resamples must be at least 1.")
 
 
+def check_test_days_allowed(config: dict, request: Request) -> None:
+    """Refuse the test days unless every model of the request may be scored on them.
+
+    Input: the config, with the allowed models under backtest.test_models,
+        and the request.
+    Raises ValueError that names the first model of the request that is not
+        listed, and the list. A request for the validation days is never refused.
+    """
+    for model in request.models:
+        check_split_allowed(config, model, request.split)
+
+
 def run(config: dict, request: Request) -> None:
     """Print the blocks for every zone group of the config, the core zones first.
 
@@ -757,13 +784,16 @@ def run(config: dict, request: Request) -> None:
     Output: nothing. Prints the blocks and writes no file. Every file is
         read before the first line is printed. The seed of the bootstrap is
         the seed of the config, set once for all groups. Ends with one line
-        when the request does not fit together, a file does not exist, a
-        results file lacks a row of a model or the daily file holds a row twice.
+        when the request does not fit together, the test days are asked for
+        a model that backtest.test_models does not list, a file does not
+        exist, a results file lacks a row of a model or the daily file holds
+        a row twice. The request is checked before a file is read.
     """
     groups = zone_groups(config)
     seed = set_seed(config)
     try:
         check_request(request, [zone for zone_keys in groups.values() for zone in zone_keys])
+        check_test_days_allowed(config, request)
         files = {group: read_files(config, group, zone_keys, request)
                  for group, zone_keys in groups.items()}
     except (FileNotFoundError, ValueError) as error:

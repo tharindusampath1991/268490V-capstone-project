@@ -96,7 +96,7 @@ def project_config(tmp_path, groups: dict[str, str] | None = None, seed: int = 1
                   "results": str(tmp_path / "results")},
         "data": {"end": "2026-10-28"},
         "splits": {"validation_start": "2026-10-23", "test_start": "2026-10-27"},
-        "backtest": {"price_column": "price"},
+        "backtest": {"price_column": "price", "test_models": ["naive", "good", "poor"]},
         "zones": [{"key": key, "holiday_country": "DE", "group": group}
                   for key, group in groups.items()],
     }
@@ -107,9 +107,9 @@ def validation_hours(config: dict) -> pd.DatetimeIndex:
     return hourly_index(*split_range(config, VALIDATION))
 
 
-def by_day(config: dict, values: list[float]) -> pd.Series:
-    """One value per validation day, set on every hour of that day. UTC index."""
-    index = validation_hours(config)
+def by_day(config: dict, values: list[float], split: str = VALIDATION) -> pd.Series:
+    """One value per day of a split, set on every hour of that day. UTC index."""
+    index = hourly_index(*split_range(config, split))
     days = index.tz_convert(MARKET_TZ).strftime("%Y-%m-%d")
     of_day = dict(zip(sorted(set(days)), values, strict=True))
     return pd.Series([float(of_day[day]) for day in days], index=index)
@@ -136,20 +136,22 @@ def save_prices(config: dict) -> None:
         pd.DataFrame({"price": 40.0 + np.arange(len(index)) % 5}, index=index).to_parquet(path)
 
 
-def scored_frame(config: dict, zone: str, error: pd.Series | list[float]) -> pd.DataFrame:
+def scored_frame(config: dict, zone: str, error: pd.Series | list[float],
+                 split: str = VALIDATION) -> pd.DataFrame:
     """Forecast and actual price of one zone. The forecast is the table price plus the error."""
     if isinstance(error, list):
-        error = by_day(config, error)
+        error = by_day(config, error, split)
     path = table_path(Path(config["paths"]["processed"]), HOURLY, zone)
     actual = pd.read_parquet(path)["price"].loc[error.index]
     return pd.DataFrame({FORECAST: actual + error, ACTUAL: actual})
 
 
-def save_runs(config: dict, errors: dict, started: str = FIRST_RUN) -> None:
-    """Save one validation run per model the way the backtest does.
+def save_runs(config: dict, errors: dict, started: str = FIRST_RUN,
+              split: str = VALIDATION) -> None:
+    """Save one run per model the way the backtest does, on the validation or the test days.
 
     Input: the config and model to zone to error, with the model naive among
-        them. An error is a series on the validation hours or one value per day.
+        them. An error is a series on the hours of the split or one value per day.
     Output: nothing. Writes the forecast files, adds the results rows and
         replaces the daily rows.
     """
@@ -157,11 +159,11 @@ def save_runs(config: dict, errors: dict, started: str = FIRST_RUN) -> None:
     groups = {zone["key"]: zone["group"] for zone in config["zones"]}
     for model, by_zone in errors.items():
         for zone, error in by_zone.items():
-            scored = scored_frame(config, zone, error)
-            reference = scored_frame(config, zone, errors["naive"][zone])
+            scored = scored_frame(config, zone, error, split)
+            reference = scored_frame(config, zone, errors["naive"][zone], split)
             row = {"run_started_utc": started, "model": model, "experiment": "H",
-                   "split": VALIDATION, "zone": zone, **score(scored, reference)}
-            results.write_forecasts(Path(config["paths"]["forecasts"]), model, "H", VALIDATION,
+                   "split": split, "zone": zone, **score(scored, reference)}
+            results.write_forecasts(Path(config["paths"]["forecasts"]), model, "H", split,
                                     zone, scored)
             results.append_rows(results.results_path(folder, "backtest", groups[zone]),
                                 pd.DataFrame([row]))
@@ -307,6 +309,34 @@ def test_a_value_on_one_side_only_gives_no_largest_difference():
     assert difference_text(whole) == "5.0e-01"
     assert difference_text(whole, " EUR/MWh") == "5.0e-01 EUR/MWh"
     assert difference_text(empty, " EUR/MWh") == "no number, a value is missing on one side"
+
+
+def test_two_values_that_are_both_zero_have_a_difference_of_zero():
+    zero = pd.Series({"a": 0.0})
+
+    both_zero = largest_relative_difference(zero, zero)
+    with_another = largest_relative_difference(pd.Series({"a": 0.0, "b": 3.0}),
+                                               pd.Series({"a": 0.0, "b": 2.0}))
+    with_an_empty = largest_relative_difference(pd.Series({"a": 0.0, "b": float("nan")}),
+                                                pd.Series({"a": 0.0, "b": 2.0}))
+
+    assert both_zero == 0.0
+    assert with_another == 0.5
+    assert np.isnan(with_an_empty)
+
+
+def test_a_forecast_without_any_error_prints_a_difference_of_zero_in_block_1(tmp_path, capsys):
+    exact = {zone: [0, 0, 0, 0] for zone in ZONES}
+    config = save_project(tmp_path, {**ERRORS, "exact": exact})
+
+    run(config, request(winner="exact", models=["exact"]))
+
+    lines = block(capsys.readouterr().out, "1. ")
+    assert lines[1].strip() == ("3 model and zone pairs. Largest relative difference of MAE "
+                                "and relative MAE to the saved rows: 0.0e+00")
+    assert lines[4].strip().endswith("against the pooled MAE, largest relative difference: "
+                                     "0.0e+00. Days per model and zone: [4]")
+    assert lines[5].endswith("forecast files: 0.0e+00 EUR/MWh")
 
 
 @pytest.mark.parametrize("column", ["mae", "relative_mae"])
@@ -855,6 +885,93 @@ def test_a_model_without_a_day_that_the_others_have_ends_the_command(tmp_path):
 
     with pytest.raises(SystemExit, match="daily_core.csv.*same delivery days"):
         run(config, request())
+
+
+def test_a_missing_saved_row_of_the_reference_ends_the_command_only_when_it_is_a_model(
+        tmp_path, capsys):
+    config = save_project(tmp_path)
+    path = results.results_path(Path(config["paths"]["results"]), "backtest", "core")
+    rows = results.read_rows(path)
+    rows[rows["model"] != "naive"].to_csv(path, index=False)
+
+    run(config, request())
+    printed = capsys.readouterr().out
+    with pytest.raises(SystemExit) as error:
+        run(config, request(models=["good", "poor", "naive"]))
+
+    assert block(printed, "1. ")[1].endswith("to the saved rows: 0.0e+00")
+    assert str(error.value.code).startswith(
+        "backtest_core.csv has no row for the model and zone pairs "
+        "[('naive', 'A'), ('naive', 'B'), ('naive', 'C')].")
+    assert capsys.readouterr().out == ""
+
+
+# The test days: open only to the models under backtest.test_models. The synthetic test
+# days are 2026-10-27 and 2026-10-28, 24 hours each.
+
+TEST_ERRORS = {
+    "naive": {"A": [4, 2], "B": [2, 2], "C": [2, 4]},
+    "good": {"A": [1, -2], "B": [1, 1], "C": [1, 1]},
+    "poor": {"A": [2, 3], "B": [2, 2], "C": [2, 2]},
+}
+
+
+def test_the_test_days_are_read_when_every_model_stands_under_test_models(tmp_path, capsys):
+    config = save_project(tmp_path)
+    save_runs(config, TEST_ERRORS, split=TEST)
+
+    run(config, request(split=TEST))
+
+    printed = capsys.readouterr().out
+    assert config["backtest"]["test_models"] == ["naive", "good", "poor"]
+    assert printed.splitlines()[1] == (
+        "Experiment H, test days 2026-10-27 to 2026-10-28, zones ['A', 'B', 'C']")
+    assert block(printed, "1. ")[1].endswith("to the saved rows: 0.0e+00")
+    assert block(printed, "1. ")[2].strip().startswith(
+        "forecasts outside the test days or not 48 per zone: 0.")
+    assert block(printed, "2. ")[2].split() == [
+        "good", four(mean([1 / 4, 1 / 2, 1 / 2])), four(mean([2 / 2, 1 / 2, 1 / 4])),
+        four(mean([3 / 6, 2 / 4, 2 / 6]))]
+
+
+@pytest.mark.parametrize("outside", ["good", "poor"])
+def test_a_model_outside_test_models_ends_the_test_days_with_one_line(
+        outside, tmp_path, capsys):
+    config = save_project(tmp_path)
+    save_runs(config, TEST_ERRORS, split=TEST)
+    allowed = [name for name in ["naive", "good", "poor"] if name != outside]
+    config["backtest"]["test_models"] = allowed
+
+    with pytest.raises(SystemExit) as error:
+        run(config, request(split=TEST))
+
+    message = str(error.value.code)
+    assert f"'{outside}'" in message and "test days" in message
+    assert f"backtest.test_models lists {allowed}" in message
+    assert "\n" not in message
+    assert capsys.readouterr().out == ""
+
+
+def test_the_guard_of_the_test_days_comes_before_any_file_is_read(tmp_path, capsys):
+    config = project_config(tmp_path)
+    config["backtest"]["test_models"] = ["naive", "good"]
+
+    with pytest.raises(SystemExit, match="'poor'.*backtest.test_models lists"):
+        run(config, request(split=TEST))
+
+    assert capsys.readouterr().out == ""
+    assert files_under(tmp_path) == {}
+
+
+def test_the_validation_days_stay_open_to_a_model_outside_test_models(tmp_path, capsys):
+    config = save_project(tmp_path)
+    config["backtest"]["test_models"] = ["naive"]
+
+    run(config, request())
+
+    printed = capsys.readouterr().out
+    assert [line.split()[0] for line in block(printed, "2. ")[2:]] == ["good", "poor"]
+    assert "6d. " in printed
 
 
 def test_a_model_without_a_zone_in_the_daily_file_ends_the_command(tmp_path, capsys):
