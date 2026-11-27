@@ -36,6 +36,11 @@ forecast, the reference, on the same market time units. Lower is better.
 Every MAE is pooled: one mean over all market time units, so a day with more
 units weighs more. Prices and errors are in EUR/MWh.
 
+A model can have more than one run in backtest_{group}.csv. The newest row
+is used then, and a line at the end of block 1 names those models. A
+difference of block 1 for which a value is missing on one side is printed as
+words, not as a number.
+
 The bootstrap draws days as if one day did not depend on the day before.
 Errors of neighbouring days are related, so its intervals are rather too
 narrow than too wide.
@@ -67,6 +72,7 @@ WORST_DAYS = 6
 PAIR = ["model", "zone"]
 DAY = "delivery_day"
 FOUR_DECIMALS = "{:.4f}".format
+MISSING = "no number, a value is missing on one side"
 
 Scored = dict[tuple[str, str], pd.DataFrame]   # (model, zone) to its forecast file
 
@@ -89,6 +95,7 @@ class Files:
     """What the command reads for the zones of one group. Every time index is UTC."""
 
     saved: pd.DataFrame            # the newest backtest row per model and zone
+    left_out: list[str]            # the models with an older backtest row that is not used
     daily_mae: pd.DataFrame        # delivery days down, (model, zone) across, EUR/MWh
     daily_mtus: pd.DataFrame       # the same shape: the market time units of each day
     scored: Scored                 # forecast and actual price per market time unit
@@ -168,19 +175,20 @@ def check_pairs(found: pd.Index, models: list[str], zone_keys: list[str], source
 
 
 def read_saved_rows(path: Path, models: list[str], zone_keys: list[str], experiment: str,
-                    split: str) -> pd.DataFrame:
+                    split: str) -> tuple[pd.DataFrame, list[str]]:
     """Read the newest saved backtest row of every model and zone.
 
     Input: the file backtest_{group}.csv, model names, zone keys, an
         experiment name and a split name.
-    Output: the rows with the index (model, zone). A model that was run more
+    Output: the rows with the index (model, zone), then the sorted names of
+        the models that had an older row left out. A model that was run more
         than once has the row of its latest run, as in the results table.
     Raises ValueError when a model lacks a zone.
     """
-    newest, _ = newest_rows(rows_of_models(path, models, zone_keys, experiment, split))
+    newest, left_out = newest_rows(rows_of_models(path, models, zone_keys, experiment, split))
     newest = newest.set_index(PAIR)
     check_pairs(newest.index, models, zone_keys, path.name)
-    return newest
+    return newest, left_out
 
 
 def read_daily(path: Path, models: list[str], zone_keys: list[str], experiment: str,
@@ -216,20 +224,22 @@ def read_files(config: dict, group: str, zone_keys: list[str], request: Request)
     """Read everything the blocks of one zone group need.
 
     Input: the config, the group name, its zone keys and the request.
-    Output: the files of the models of the request and of the reference model.
+    Output: the files of the models of the request and of the reference
+        model. The saved backtest rows are those of the models of the
+        request alone, since only they are compared with the forecast files.
     Raises FileNotFoundError when a file does not exist and ValueError when a
         results file lacks a row or holds one twice.
     """
     models = with_reference(request.models)
     experiment, split = request.experiment, request.split
     folder = REPO_ROOT / config["paths"]["results"]
-    saved = read_saved_rows(results.results_path(folder, "backtest", group), models, zone_keys,
-                            experiment, split)
+    saved, left_out = read_saved_rows(results.results_path(folder, "backtest", group),
+                                      request.models, zone_keys, experiment, split)
     daily_mae, daily_mtus = read_daily(results.results_path(folder, "daily", group), models,
                                        zone_keys, experiment, split)
     scored = read_scored(config, models, zone_keys, experiment, split)
     prices = read_prices(config, zone_keys, experiment, split)
-    return Files(saved, daily_mae, daily_mtus, scored, prices)
+    return Files(saved, left_out, daily_mae, daily_mtus, scored, prices)
 
 
 # Relative MAE from the daily losses and from the forecast files.
@@ -285,19 +295,26 @@ def recomputed_mae(scored: Scored, models: list[str], zone_keys: list[str]) -> p
 
 
 def largest_relative_difference(new: pd.Series, old: pd.Series) -> float:
-    """Return the largest |new - old| / |old| of two series with the same index."""
-    return float(((new - old).abs() / old.abs()).max())
+    """Return the largest |new - old| / |old| of two series.
+
+    Output: NaN when a value is empty or stands in one of the series only,
+        so that a missing value is not passed over as no difference.
+    """
+    return float(((new - old).abs() / old.abs()).max(skipna=False))
 
 
 def difference_to_saved(new: pd.DataFrame, saved: pd.DataFrame) -> float:
     """Return how far the recomputed numbers are from the saved backtest rows.
 
     Input: the frame of recomputed_mae and the rows of read_saved_rows.
-    Output: the largest relative difference of the MAE and of the relative MAE.
+    Output: the largest relative difference of the MAE and of the relative
+        MAE. NaN when a saved value is empty.
     """
     old = saved.loc[new.index]
-    return max(largest_relative_difference(new["mae"], old["mae"]),
-               largest_relative_difference(new["relative_mae"], old["relative_mae"]))
+    differences = [largest_relative_difference(new[column], old[column])
+                   for column in ("mae", "relative_mae")]
+    # np.max keeps a NaN. The built-in max can lose one, depending on the order.
+    return float(np.max(differences))
 
 
 def difference_to_daily(new: pd.DataFrame, daily_mae: pd.DataFrame,
@@ -306,6 +323,7 @@ def difference_to_daily(new: pd.DataFrame, daily_mae: pd.DataFrame,
 
     Input: the frame of recomputed_mae and the two tables of read_daily.
     Output: the largest relative difference over the model and zone pairs.
+        NaN when a value is missing on one side.
     """
     return largest_relative_difference(pooled_mae(daily_mae, daily_mtus)[new.index], new["mae"])
 
@@ -360,33 +378,60 @@ def largest_daily_difference(scored: Scored, daily_mae: pd.DataFrame, market_tz:
 
     Input: the forecast files, the daily MAE table of read_daily and the
         market time zone.
-    Output: the difference in EUR/MWh.
+    Output: the difference in EUR/MWh. NaN when a delivery day stands in
+        the daily file or in the forecast files only.
     """
     from_files = daily_mae_of_files(scored, market_tz)
-    return float((from_files - daily_mae[from_files.columns]).abs().max().max())
+    differences = (from_files - daily_mae[from_files.columns]).abs()
+    return float(differences.max(skipna=False).max(skipna=False))
+
+
+def difference_text(difference: float, unit: str = "") -> str:
+    """Return a difference of block 1 as it is printed.
+
+    Input: the difference, NaN when a value was missing on one side of the
+        comparison, and the unit to print after the number.
+    Output: the number with two digits, such as 4.3e-16, or words for NaN.
+    """
+    return MISSING if np.isnan(difference) else f"{difference:.1e}{unit}"
+
+
+def zones_text(zones: int) -> str:
+    """Return a number of zones as it is printed: 1 zone, 7 zones."""
+    return f"{zones} zone" if zones == 1 else f"{zones} zones"
 
 
 def print_recompute(config: dict, files: Files, zone_keys: list[str], request: Request) -> None:
-    """Print block 1: the saved numbers against the forecast files."""
+    """Print block 1: the saved numbers against the forecast files.
+
+    Input: the config, the files of read_files, the zone keys of the group
+        and the request.
+    Output: nothing. A difference for which a value was missing on one side
+        is printed as words, not as a number. The last line is there only
+        when a model had more than one run.
+    """
     new = recomputed_mae(files.scored, request.models, zone_keys)
     expected = split_index(config, request.experiment, request.split)
     counts = file_checks(files.scored, files.prices, expected)
     days = sorted(set(files.daily_mae[request.models].count()))
+    to_saved = difference_to_saved(new, files.saved)
+    to_daily = difference_to_daily(new, files.daily_mae, files.daily_mtus)
     per_day = largest_daily_difference(files.scored, files.daily_mae,
                                        config["market"]["timezone"])
     print("\n1. Recompute from the forecast files, without the harness metrics")
     print(f"   {len(new)} model and zone pairs. Largest relative difference of MAE and "
-          f"relative MAE to the saved rows: {difference_to_saved(new, files.saved):.1e}")
+          f"relative MAE to the saved rows: {difference_text(to_saved)}")
     print(f"   forecasts outside the {request.split} days or not {len(expected)} per zone: "
           f"{counts['outside'] + counts['wrong_count']}. Actual prices that differ from the "
           f"processed table: {counts['actual_differs']}. Empty forecasts: {counts['empty']}")
     print(f"   (these three counts are over the files of the given models and of {REFERENCE})")
     print(f"   mean of the daily MAE values, weighted by their market time units, against the "
-          f"pooled MAE, largest relative difference: "
-          f"{difference_to_daily(new, files.daily_mae, files.daily_mtus):.1e}. "
+          f"pooled MAE, largest relative difference: {difference_text(to_daily)}. "
           f"Days per model and zone: {days}")
     print(f"   largest difference of one daily MAE in the daily file to the forecast files: "
-          f"{per_day:.1e} EUR/MWh")
+          f"{difference_text(per_day, ' EUR/MWh')}")
+    if files.left_out:
+        print(f"   More than one run, newest row used: {', '.join(files.left_out)}.")
 
 
 # Blocks 2 to 5.
@@ -415,7 +460,7 @@ def halves_table(daily_mae: pd.DataFrame, daily_mtus: pd.DataFrame, models: list
 
 def print_halves(halves: pd.DataFrame, zones: int) -> None:
     """Print block 2 from the frame of halves_table and the number of zones."""
-    print(f"\n2. Mean relative MAE over the {zones} zones, by half of the days")
+    print(f"\n2. Mean relative MAE over the {zones_text(zones)}, by half of the days")
     print(halves.to_string(float_format=FOUR_DECIMALS))
 
 
@@ -500,8 +545,8 @@ def print_bootstrap(files: Files, zone_keys: list[str], request: Request, ordere
                             seed)
     print(f"\n4. Bootstrap over the {len(files.daily_mae)} days ({request.resamples} resamples "
           f"of whole days, seed {seed}):")
-    print(f"   difference in mean relative MAE over the {len(zone_keys)} zones, other model "
-          f"minus {request.winner}")
+    print(f"   difference in mean relative MAE over the {zones_text(len(zone_keys))}, other "
+          f"model minus {request.winner}")
     for line in bootstrap_lines(means, request.winner, others) or ["no other model was given"]:
         print(f"   {line}")
 
@@ -519,7 +564,7 @@ def means_without(table: pd.DataFrame, without: str) -> pd.Series:
 
 def print_without(table: pd.DataFrame, without: str) -> None:
     """Print block 5 from the relative MAE of all days and the zone to leave out."""
-    print(f"\n5. Mean relative MAE over the {table.shape[1] - 1} zones without {without}")
+    print(f"\n5. Mean relative MAE over the {zones_text(table.shape[1] - 1)} without {without}")
     print(means_without(table, without).to_string(float_format=FOUR_DECIMALS))
 
 
@@ -566,11 +611,17 @@ def hours_by_model(scored: Scored, models: list[str], zone_keys: list[str],
 
 def print_hours(scored: Scored, models: list[str], winner: str, zone_keys: list[str],
                 market_tz: str) -> None:
-    """Print the two hour tables of block 6."""
+    """Print the two hour tables of block 6.
+
+    Input: the forecast files, the models of the first table in the order
+        of its columns, the winner, whose zones the second table shows, the
+        zones and the market time zone.
+    Output: nothing. The hours of the day are in market time.
+    """
     by_zone = hourly_relative_mae(scored, winner, zone_keys, market_tz)
     by_zone["mean"] = by_zone.mean(axis=1)
     print(f"\n6a. Relative MAE by hour of the day ({market_tz}), mean over the "
-          f"{len(zone_keys)} zones")
+          f"{zones_text(len(zone_keys))}")
     print(hours_by_model(scored, models, zone_keys, market_tz)
           .to_string(float_format=FOUR_DECIMALS))
     print(f"\n6b. Relative MAE of {winner} by hour of the day ({market_tz}) and zone")
@@ -602,7 +653,8 @@ def weeks_table(daily_mae: pd.DataFrame, daily_mtus: pd.DataFrame, models: list[
 
 def print_weeks(weeks: pd.DataFrame, zones: int) -> None:
     """Print the week table of block 6 from the frame of weeks_table and the number of zones."""
-    print(f"\n6c. Mean relative MAE over the {zones} zones by calendar week (Monday to Sunday)")
+    print(f"\n6c. Mean relative MAE over the {zones_text(zones)} by calendar week "
+          f"(Monday to Sunday)")
     print(weeks.to_string(float_format=FOUR_DECIMALS))
 
 
@@ -643,13 +695,14 @@ def print_days(days: pd.DataFrame, winner: str) -> None:
 
 # The command.
 
-def print_blocks(config: dict, files: Files, zone_keys: list[str], request: Request) -> None:
+def print_blocks(config: dict, files: Files, zone_keys: list[str], request: Request,
+                 seed: int) -> None:
     """Print every block for the zones of one group.
 
-    Input: the config, the files of read_files, the zone keys of the group
-        and the request.
+    Input: the config, the files of read_files, the zone keys of the group,
+        the request and the seed of the bootstrap.
     Output: nothing. The models stand in the order of block 2 in every later
-        block. The seed of the bootstrap is the seed of the config.
+        block.
     """
     daily_mae, daily_mtus = files.daily_mae, files.daily_mtus
     market_tz = config["market"]["timezone"]
@@ -663,7 +716,7 @@ def print_blocks(config: dict, files: Files, zone_keys: list[str], request: Requ
     print_recompute(config, files, zone_keys, request)
     print_halves(halves, len(zone_keys))
     print_zones_won(table)
-    print_bootstrap(files, zone_keys, request, ordered, set_seed(config))
+    print_bootstrap(files, zone_keys, request, ordered, seed)
     if request.without in zone_keys:
         print_without(table, request.without)
     print_hours(files.scored, ordered, request.winner, zone_keys, market_tz)
@@ -702,11 +755,13 @@ def run(config: dict, request: Request) -> None:
 
     Input: the config dictionary and the request.
     Output: nothing. Prints the blocks and writes no file. Every file is
-        read before the first line is printed. Ends with one line when the
-        request does not fit together, a file does not exist, a results file
-        lacks a row of a model or the daily file holds a row twice.
+        read before the first line is printed. The seed of the bootstrap is
+        the seed of the config, set once for all groups. Ends with one line
+        when the request does not fit together, a file does not exist, a
+        results file lacks a row of a model or the daily file holds a row twice.
     """
     groups = zone_groups(config)
+    seed = set_seed(config)
     try:
         check_request(request, [zone for zone_keys in groups.values() for zone in zone_keys])
         files = {group: read_files(config, group, zone_keys, request)
@@ -714,7 +769,7 @@ def run(config: dict, request: Request) -> None:
     except (FileNotFoundError, ValueError) as error:
         sys.exit(str(error))
     for group, zone_keys in groups.items():
-        print_blocks(config, files[group], zone_keys, request)
+        print_blocks(config, files[group], zone_keys, request, seed)
 
 
 def read_request() -> Request:

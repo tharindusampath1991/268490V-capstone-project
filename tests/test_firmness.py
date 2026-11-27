@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from epf.config import REPO_ROOT, load_config
+from epf.config import load_config
 from epf.data.market_time import hourly_index
 from epf.data.splits import TEST, VALIDATION, split_range
 from epf.data.validate import HOURLY, table_path
@@ -26,12 +26,15 @@ from epf.evaluation import firmness, results
 from epf.evaluation.backtest import ACTUAL, EXPERIMENTS, FORECAST, KEYS, daily_rows, score
 from epf.evaluation.firmness import (
     Request,
+    bootstrap_lines,
     bootstrap_means,
     days_table,
+    difference_text,
     file_checks,
     halves_table,
     hourly_relative_mae,
     hours_by_model,
+    largest_relative_difference,
     means_without,
     read_daily,
     read_prices,
@@ -42,6 +45,7 @@ from epf.evaluation.firmness import (
     run,
     split_index,
     weeks_table,
+    zones_text,
     zones_won,
 )
 
@@ -243,7 +247,9 @@ def test_block_1_finds_no_difference_when_the_files_fit_together(tmp_path, capsy
 
     run(config, request())
 
-    lines = block(capsys.readouterr().out, "1. ")
+    printed = capsys.readouterr().out
+    lines = block(printed, "1. ")
+    assert len(lines) == 6 and "More than one run" not in printed
     assert lines[1].strip() == ("6 model and zone pairs. Largest relative difference of MAE "
                                 "and relative MAE to the saved rows: 0.0e+00")
     assert lines[2].strip() == ("forecasts outside the validation days or not 97 per zone: 0. "
@@ -267,6 +273,9 @@ def test_block_1_shows_a_saved_row_that_does_not_fit_its_forecast_file(tmp_path,
     difference = (file_mae - saved_mae) / saved_mae
     assert f"{difference:.1e}" == "8.9e-02"
     assert lines[1].endswith("to the saved rows: 8.9e-02")
+    assert f"{(file_mae - saved_mae) / file_mae:.1e}" == "8.2e-02"
+    assert lines[4].strip().endswith("against the pooled MAE, largest relative difference: "
+                                     "8.2e-02. Days per model and zone: [4]")
     assert lines[5].strip() == ("largest difference of one daily MAE in the daily file to the "
                                 "forecast files: 1.0e+00 EUR/MWh")
 
@@ -284,6 +293,52 @@ def test_block_1_shows_a_saved_relative_mae_that_does_not_fit_the_reference_file
     saved, from_files = GOOD["A"], (24 + 48 + 150 + 48) / (2 * NAIVE_SUMS["A"])
     assert f"{(saved - from_files) / saved:.1e}" == "5.0e-01"
     assert lines[1].endswith("to the saved rows: 5.0e-01")
+
+
+def test_a_value_on_one_side_only_gives_no_largest_difference():
+    new = pd.Series({"a": 1.0, "b": 3.0})
+
+    whole = largest_relative_difference(new, pd.Series({"a": 2.0, "b": 2.0}))
+    one_side = largest_relative_difference(new, pd.Series({"a": 2.0}))
+    empty = largest_relative_difference(new, pd.Series({"a": 2.0, "b": float("nan")}))
+
+    assert whole == 0.5
+    assert np.isnan(one_side) and np.isnan(empty)
+    assert difference_text(whole) == "5.0e-01"
+    assert difference_text(whole, " EUR/MWh") == "5.0e-01 EUR/MWh"
+    assert difference_text(empty, " EUR/MWh") == "no number, a value is missing on one side"
+
+
+@pytest.mark.parametrize("column", ["mae", "relative_mae"])
+def test_an_empty_saved_value_is_not_passed_over_as_no_difference(column, tmp_path, capsys):
+    config = save_project(tmp_path)
+    path = results.results_path(Path(config["paths"]["results"]), "backtest", "core")
+    rows = results.read_rows(path)
+    rows.loc[(rows["model"] == "poor") & (rows["zone"] == "B"), column] = float("nan")
+    rows.to_csv(path, index=False)
+
+    run(config, request())
+
+    lines = block(capsys.readouterr().out, "1. ")
+    assert lines[1].strip() == ("6 model and zone pairs. Largest relative difference of MAE "
+                                "and relative MAE to the saved rows: no number, a value is "
+                                "missing on one side")
+    assert lines[5].endswith("forecast files: 0.0e+00 EUR/MWh")
+
+
+def test_a_day_that_only_the_forecast_files_have_is_not_passed_over_as_no_difference(
+        tmp_path, capsys):
+    config = save_project(tmp_path)
+    rows = results.read_rows(daily_path(config))
+    rows[rows["delivery_day"] != "2026-10-25"].to_csv(daily_path(config), index=False)
+
+    run(config, request())
+
+    lines = block(capsys.readouterr().out, "1. ")
+    assert lines[1].endswith("to the saved rows: 0.0e+00")
+    assert lines[4].strip().endswith("Days per model and zone: [3]")
+    assert lines[5].strip() == ("largest difference of one daily MAE in the daily file to the "
+                                "forecast files: no number, a value is missing on one side")
 
 
 def test_an_actual_price_that_differs_from_the_table_is_counted(tmp_path, capsys):
@@ -552,6 +607,30 @@ def test_the_bootstrap_lines_are_those_of_the_models_asked_for(tmp_path, capsys)
     assert [line.split() for line in one[2:]] == [every[3].split()]
 
 
+def test_a_bootstrap_line_holds_the_mean_the_interval_and_the_share_by_hand():
+    # 41 resamples, so the 2.5% percentile stands at position 0.025 * 40 = 1, the second
+    # smallest difference, and the 97.5% percentile at position 39, the second largest.
+    differences = ([0.01] * 14 + [-0.09, 0.20, -0.01, -0.01, 0.0, 0.07, -0.05] + [0.01] * 14
+                   + [-0.02, 0.04, -0.01, 0.0, -0.01, -0.01])
+    means = pd.DataFrame({"win": 0.5, "other": [0.5 + value for value in differences],
+                          "a_longer_name": 0.5})
+
+    lines = bootstrap_lines(means, "win", ["other", "a_longer_name"])
+
+    in_order = sorted(differences)
+    assert len(differences) == 41
+    assert in_order[:3] == [-0.09, -0.05, -0.02] and in_order[-3:] == [0.04, 0.07, 0.20]
+    assert in_order[20] == 0.01
+    assert f"{sum(differences) / 41:+.4f}" == "+0.0093"
+    assert sum(value > 0 for value in differences) == 31
+    assert f"{31 / 41:.1%}" == "75.6%"
+    assert lines == [
+        "other          mean +0.0093   95% interval -0.0500 to +0.0700   "
+        "share of resamples where win is better: 75.6%",
+        "a_longer_name  mean +0.0000   95% interval +0.0000 to +0.0000   "
+        "share of resamples where win is better: 0.0%"]
+
+
 def test_block_4_says_so_when_the_winner_is_the_only_model(tmp_path, capsys):
     config = save_project(tmp_path)
 
@@ -737,12 +816,17 @@ def test_the_newest_row_is_used_when_a_model_was_run_twice(tmp_path, capsys):
     save_runs(config, second, started=SECOND_RUN)
 
     run(config, request())
-
     printed = capsys.readouterr().out
+    run(config, request(models=["poor", "naive", "good"]))
+    with_naive = capsys.readouterr().out
+
     saved = results.read_rows(results.results_path(Path(config["paths"]["results"]),
                                                    "backtest", "core"))
     assert (saved["model"] == "good").sum() == 6
     assert block(printed, "1. ")[1].endswith("to the saved rows: 0.0e+00")
+    assert block(printed, "1. ")[6:] == ["   More than one run, newest row used: good."]
+    assert block(with_naive, "1. ")[6:] == [
+        "   More than one run, newest row used: good, naive."]
     assert block(printed, "2. ")[2].split()[-1] == four(mean(
         [97 / NAIVE_SUMS["A"], 97 / NAIVE_SUMS["B"], 97 / NAIVE_SUMS["C"]]))
 
@@ -773,15 +857,41 @@ def test_a_model_without_a_day_that_the_others_have_ends_the_command(tmp_path):
         run(config, request())
 
 
-def test_every_zone_group_gets_its_own_blocks_core_zones_first(tmp_path, capsys):
+def test_a_model_without_a_zone_in_the_daily_file_ends_the_command(tmp_path, capsys):
+    config = save_project(tmp_path)
+    rows = results.read_rows(daily_path(config))
+    lost = (rows["model"] == "poor") & (rows["zone"] == "C")
+    rows[~lost].to_csv(daily_path(config), index=False)
+
+    with pytest.raises(SystemExit) as error:
+        run(config, request())
+
+    message = str(error.value.code)
+    assert message.startswith("daily_core.csv has no row for the model and zone pairs "
+                              "[('poor', 'C')].")
+    assert "\n" not in message
+    assert capsys.readouterr().out == ""
+
+
+def test_every_zone_group_gets_its_own_blocks_core_zones_first(tmp_path, capsys, monkeypatch):
     config = project_config(tmp_path, {"C": "extra", "A": "core", "D": "extra", "B": "core"})
     save_prices(config)
     save_runs(config, {model: {**by_zone, "D": by_zone["A"]}
                        for model, by_zone in ERRORS.items()})
+    seeds_set = []
+
+    def counted_seed(config: dict) -> int:
+        seeds_set.append(config["seed"])
+        return config["seed"]
+
+    monkeypatch.setattr(firmness, "set_seed", counted_seed)
 
     run(config, request(without="D"))
 
     lines = capsys.readouterr().out.splitlines()
+    assert seeds_set == [11]
+    assert [line for line in lines if line.startswith("4. ")] == [
+        "4. Bootstrap over the 4 days (50 resamples of whole days, seed 11):"] * 2
     assert [line for line in lines if line.startswith("Experiment")] == [
         "Experiment H, validation days 2026-10-23 to 2026-10-26, zones ['A', 'B']",
         "Experiment H, validation days 2026-10-23 to 2026-10-26, zones ['C', 'D']"]
@@ -790,9 +900,14 @@ def test_every_zone_group_gets_its_own_blocks_core_zones_first(tmp_path, capsys)
          four(mean([GOOD["A"], GOOD["B"]]))],
         ["good", "2", four(mean([GOOD["A"], GOOD["B"]])), four(mean([GOOD["A"], GOOD["B"]]))]]
     assert [line for line in lines if line.startswith("5. ")] == [
-        "5. Mean relative MAE over the 1 zones without D"]
-    assert lines[lines.index("5. Mean relative MAE over the 1 zones without D") + 1].split() == [
+        "5. Mean relative MAE over the 1 zone without D"]
+    assert lines[lines.index("5. Mean relative MAE over the 1 zone without D") + 1].split() == [
         "good", four(GOOD["C"])]
+
+
+def test_a_number_of_zones_reads_right_for_one_zone_and_for_several():
+    assert [zones_text(zones) for zones in (0, 1, 2, 7)] == [
+        "0 zones", "1 zone", "2 zones", "7 zones"]
 
 
 def test_run_writes_and_changes_no_file(tmp_path, capsys):
@@ -897,7 +1012,7 @@ def test_the_module_names_no_zone():
     names = [str(zone[key]) for zone in config["zones"] for key in ("key", "energy_charts")]
     names += [zone["weather_point"]["place"] for zone in config["zones"]]
 
-    text = (REPO_ROOT / "src" / "epf" / "evaluation" / "firmness.py").read_text(encoding="utf-8")
+    text = Path(firmness.__file__).read_text(encoding="utf-8")
 
     found = [name for name in names if re.search(rf"\b{re.escape(name)}\b", text)]
     assert len(names) == 3 * len(config["zones"])
