@@ -147,7 +147,7 @@ Once the tables are built, this scores the seasonal naive forecast on the 60 val
 - One run covers the hourly table (experiment H) and the 15-minute table (experiment Q) for all seven zones. `--experiment H` or `--experiment Q` runs one of the two.
 - The seasonal naive forecast is the price at the same local time 7 days before (DECISIONS entry 52). It is the reference for relative MAE.
 - The command prints its checks per zone and experiment and stops with an error when one fails.
-- Results go to `reports/results/`, which is committed. Its three files cover all seven zones. `backtest_core.csv` holds one row per run, zone and experiment. Each row has the metrics, the model settings, the seed, the run time, the peak memory and the hardware. `daily_core.csv` holds the losses per delivery day. `quantile_core.csv` holds the scores of the quantile forecasts (see "LightGBM" below).
+- Results go to `reports/results/`, which is committed. Its three files cover all seven zones. `backtest_core.csv` holds one row per run, zone and experiment. Each row has the metrics, the config entry of the model, the seed, the run time, the peak memory and the hardware. The `features` section of the config is not in the row. `daily_core.csv` holds the losses per delivery day. `quantile_core.csv` holds the scores of the quantile forecasts (see "LightGBM" below).
 - A run adds rows to `backtest_core.csv`, so a second run shows as a second set of rows.
 - Forecasts per market time unit are saved under `data/forecasts/`, which git ignores.
 - `--split test` scores the 90 test days. It works only for a model listed under `backtest.test_models` in the config: the naive forecast, `mstl_182`, the statistical baseline, and `lgbm_load_826_slow`, the LightGBM model (DECISIONS entries 50, 58, 67 and 90). Each of the three test runs was done once, on 24, 25 and 26 Nov 2026. None of them is run again.
@@ -163,7 +163,7 @@ This prints the relative MAE of every model per zone as a Markdown table:
 - It reads the saved rows of `backtest_core.csv`, runs no model and writes no file. It takes about 2 seconds.
 - The models are sorted by their mean over the seven zones, the lowest first. `--experiment Q` prints the table of the 15-minute experiment.
 - When a model has more than one run, the newest row is used, and a line under the table names the model.
-- The result tables of this file were printed by this command (DECISIONS entry 83).
+- The numbers of the result tables of this file are those that this command prints (DECISIONS entry 83).
 
 ### Statistical baseline
 
@@ -226,7 +226,7 @@ The LightGBM model is `lgbm_load_826_slow`. The config names it under `backtest.
 ```
 
 - It uses the feature groups `price`, `calendar`, `load_forecast`, `wind_forecast`, `solar_forecast` and `actual_load`. It has 400 trees with a learning rate of 0.025 and is fitted on the squared error.
-- It is fitted every 7 days on a moving window of the last 826 days. On the days between, the trees stay and are applied to the features of the day.
+- It is fitted every 7 days on a moving window of the last 826 days (819 training days, since the lags read the first 7). On the days between, the trees stay and are applied to the features of the day.
 - The 15-minute table starts on 2025-10-01, so on experiment Q the window never fills. The model trains on all the 15-minute history there (DECISIONS entry 89).
 - Every fit builds its training rows from the inputs of its delivery day, and each training day is cut again as if it were forecast (DECISIONS entry 85). So a training row holds only what was known when its own day was forecast.
 - `lightgbm` 4.7.0 is used through its native API, `lightgbm.train` and `lightgbm.Dataset`. scikit-learn is not installed (DECISIONS entry 84).
@@ -262,7 +262,7 @@ Relative MAE on the 90 test days. The LightGBM test run was done once, on 26 Nov
 | Q | `naive` | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 | 1.0000 |
 
 - The test values are lower than the validation values because the naive forecast was much worse on the test days. On experiment H its mean MAE rose from 29.63 to 54.83 EUR/MWh, and that of the LightGBM model from 15.46 to 25.85.
-- DE_LU on the test days is a little below a published value of about 0.42 for that zone, which comes from another period and other inputs. The mean is inside the published range of 0.42 to 0.48 (DECISIONS entry 90).
+- DE_LU on the test days is a little below a published value of about 0.42 for that zone (arXiv 2611.16657, per-hour LightGBM on 2025 hourly data). That value comes from another period and other inputs. The mean of the seven zones is inside the range of 0.42 to 0.48 that the same study gives for DE_LU and the four Swedish zones (DECISIONS entry 90).
 - SE4 has no usable solar forecast, and the solar features of all four Swedish zones are empty. SE1 and SE2 are near-duplicates.
 - 7 of the 90 ES test days, 6 to 12 Nov 2026, have no wind and no solar forecast. The ES test values include these days.
 
@@ -272,7 +272,7 @@ This prints how firm the choice between the settings is:
 .venv\Scripts\python -m epf.evaluation.firmness --winner lgbm_load_826_slow --models lgbm_load_826_slow lgbm_load_826 lgbm_load_826_l1 lgbm_all lgbm_all_826 lgbm_fcst lgbm_load lgbm_load_826_leaves15 lgbm_load_364 lgbm_all_364 lgbm_price mstl_182 --without SE_2
 ```
 
-- It prints the MAE computed again from the saved forecasts, the mean by half of the days, the zones each setting wins, a bootstrap over whole delivery days, the mean without one zone, and the relative MAE by hour, by week and on the worst days.
+- It prints the MAE computed again from the saved forecasts, the mean by half of the days, the zones each setting wins, a bootstrap over whole delivery days, the mean without one zone, the relative MAE by hour and by week, the days on which the winner is worse than the naive forecast, and the share of its error in its 6 worst days.
 - It only reads: the saved rows, the processed tables and the forecasts under `data/forecasts/`. So the backtest of every named setting must have run on the machine first. It takes about 5 seconds and writes no file.
 - It reads the validation days. It refuses the test days unless every named model is listed under `backtest.test_models` (DECISIONS entry 83).
 

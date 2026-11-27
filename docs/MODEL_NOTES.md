@@ -1054,11 +1054,11 @@ Two limits of the Swedish data hold for every table of this section. SE_4 has no
 ### In short
 
 - The LightGBM model is `lgbm_load_826_slow`: 400 trees with a learning rate of 0.025, grown on the squared error. It uses the price lags, the calendar, the load, wind and solar forecast and the actual load of D-2. That is 24 features on the hourly frame and 25 on the 15-minute frame. It uses no weather.
-- Each weekly fit trains on a moving window: the 819 delivery days before the delivery day, which is `history_days: 826` minus the 7 days that the lags read.
+- On experiment H each weekly fit trains on a moving window: the 819 delivery days before the delivery day, which is `history_days: 826` minus the 7 days that the lags read. On experiment Q the 15-minute table is shorter than the window, and a fit trains on all of it: 258 to 314 days on the validation days (section 10).
 - It was chosen from eleven settings. All eleven ran on the 60 validation days of experiment H for all seven zones. The rule was fixed before the runs: the lowest mean relative MAE over the seven zones wins (DECISIONS entries 87 and 88).
 - The four best settings are a tie inside the noise of 60 days: 0.5316, 0.5359, 0.5379 and 0.5409. `lgbm_load_826_slow` won by the rule, not by a clear margin.
 - Mean relative MAE over the seven zones: 0.5316 on validation H, 0.5782 on validation Q, 0.4716 on test H and 0.4792 on test Q. `mstl_182` has 0.6887, 0.6831, 0.5666 and 0.5691 on the same days.
-- The load, wind and solar forecasts are what helps: they lower the mean by 0.1037 against the price and the calendar alone. The actual load adds nothing. Weather is not settled.
+- The load, wind and solar forecasts are what helps: they lower the mean from 0.6569 to 0.5539 against the price and the calendar alone. The actual load adds nothing. Weather is not settled.
 - Quantile forecasts at five levels were added for the validation days. Their intervals are too narrow in every zone: the 90% interval holds 75% of the prices on experiment H and 73% on experiment Q. Nothing was recalibrated.
 - Time: the eleven validation runs took 8164 seconds, which is 2 hours 16 minutes. The run on experiment Q took 220 seconds, the one test run 1179 seconds and the quantile run 1109 seconds.
 
@@ -1076,7 +1076,7 @@ Two limits of the Swedish data hold for every table of this section. SE_4 has no
 - There is one training row per market time unit of every training day. Its target is the price of that market time unit.
 - A row without a price is dropped, because LightGBM would store its target as 0. An empty feature stays empty, and LightGBM handles it as a missing value. Nothing is filled and nothing is scaled.
 
-**The window.** An entry with `history_days` receives that many days before D, as a moving window. The first 7 of them only feed the lags. So `history_days: 826` trains on 819 delivery days at every fit, and `history_days: 364` on 357. An entry without `history_days` receives every day of its table. On experiment H it trains on 2723 delivery days at the first fit of the validation days and on 2779 at the last. A fit also trains on validation days that have already passed, up to the day before its own delivery day. No scored day is in the fit that forecasts it.
+**The window.** An entry with `history_days` receives that many days before D, as a moving window. The first 7 of them only feed the lags. So on the hourly table `history_days: 826` trains on 819 delivery days at every fit, and `history_days: 364` on 357. The 15-minute table is shorter than 826 days (section 10). An entry without `history_days` receives every day of its table. On experiment H it trains on 2723 delivery days at the first fit of the validation days and on 2779 at the last. A fit also trains on validation days that have already passed, up to the day before its own delivery day. No scored day is in the fit that forecasts it.
 
 **Fit and forecast.** As for every model, a fit is made on the first scored day and then every 7th delivery day. That is 9 fits per zone on the validation days and 13 on the test days. Between two fits the trees stay as they are. The forecast of a day applies them to the features of that day, built from its own inputs.
 
@@ -1089,11 +1089,11 @@ Two limits of the Swedish data hold for every table of this section. SE_4 has no
 - `verbosity: -1`, so a fit prints nothing.
 - No `num_threads`. LightGBM uses its default number of threads.
 
-**The ten allowed keys.** Under `params` an entry may set `learning_rate`, `num_leaves`, `max_depth`, `min_data_in_leaf`, `feature_fraction`, `bagging_fraction`, `bagging_freq`, `lambda_l1`, `lambda_l2` and `max_bin`. Every other key is refused before a fit: an alias of one of the ten, a round count, and a key that the model sets itself. An entry must hold `family`, `groups`, `objective`, `trees` and `params`, and may hold `history_days`. An unknown key of the entry is refused too.
+**The ten allowed keys.** Under `params` an entry may set `learning_rate`, `num_leaves`, `max_depth`, `min_data_in_leaf`, `feature_fraction`, `bagging_fraction`, `bagging_freq`, `lambda_l1`, `lambda_l2` and `max_bin`. Every other key is refused before a fit: an alias of one of the ten, a round count, and a key that the model sets itself. An entry must hold `family`, `groups`, `objective`, `trees` and `params`, and may hold `history_days`. An unknown key of the entry is refused too. A value under `params` must be a number. An empty value, a list, a text, or true and false are refused when the model is built (added on 27 Nov 2026 after the final review).
 
 **Calendar features as numbers.** `hour`, `weekday`, `holiday` and `quarter_hour` go in as numbers, not as categories.
 
-**Two guards at forecast time.** The model compares the feature names of a forecast with those of the fit, in name and in order. A refusal by LightGBM, for example for `num_leaves: 1`, becomes an error that names the config entry.
+**Two guards.** Before every forecast the model compares the feature names with those of the fit, in name and in order. At a fit, a refusal by LightGBM, for example for `num_leaves: 1`, becomes an error that names the config entry.
 
 ### 2. What the code relies on in `lightgbm` 4.7.0
 
@@ -1158,7 +1158,7 @@ Step 1 has eight settings with the defaults of LightGBM: a learning rate of 0.1 
 | `lgbm_load_826_slow` | 2 | as `lgbm_load` | 24 | 826 | 819 | `regression` | 400 | `learning_rate: 0.025` |
 | `lgbm_load_826_leaves15` | 2 | as `lgbm_load` | 24 | 826 | 819 | `regression` | 100 | `num_leaves: 15` |
 
-- Each setting is an entry under `models` in `config/config.yaml`, and its settings are copied into every results row.
+- Each setting is an entry under `models` in `config/config.yaml`, and that entry is copied into every results row. The `features` section of the config is not copied (section 14).
 - The weather table starts on 2024-03-15. A window of 826 days before the first validation day starts on 2024-03-19, so it lies inside the weather period. 826 days are 118 weeks.
 - In `lgbm_load_826_slow` a quarter of the learning rate with four times the trees counts as one change.
 - The owner approved the settings and the rule on 26 Nov 2026, before any full run (entry 87).
@@ -1432,7 +1432,7 @@ What it shows:
 - The first place is not firm. `lgbm_load_826` is behind the winner by 0.0044, and its interval holds zero: -0.0013 to +0.0093. The intervals of `lgbm_load_826_l1` and `lgbm_all` hold zero too. So the four best settings are a tie.
 - The intervals of `lgbm_fcst` and `lgbm_load` also reach just below zero, with -0.0036. `lgbm_all_826`, `lgbm_load_826_leaves15`, the two settings on 364 days, `lgbm_price` and `mstl_182` are behind the winner.
 - The halves disagree about the first place. `lgbm_load_826_l1` is first in the first 30 days, with 0.5273 against 0.5375. The winner is first in the last 30 days, with 0.5365.
-- The value of all 60 days can lie below both halves. In each zone the 60-day ratio lies between the two half ratios, nearer to the half with the larger naive error. That half is not the same in every zone.
+- The winner's mean over all 60 days, 0.5316, is below its mean in both halves, 0.5375 and 0.5365. This is arithmetic, not an error. In each zone the 60-day ratio lies between the two half ratios, nearer to the half with the larger naive error. That half is not the same in every zone.
 - The zones disagree. The winner is best in DE_LU and SE_4 only. `lgbm_all` is best in SE_1 and SE_2, `lgbm_load_826_l1` in FR, `lgbm_load_826` in ES and `lgbm_all_826` in SE_3.
 - Without SE_2 the winner stays first with 0.5348. `lgbm_load_826_l1` is then second with 0.5362.
 - By hour of the day the winner is best at hour 4 with 0.4847 and worst at hour 23 with 0.6378. At hour 0 the two settings that read prices only are ahead of the winner: `mstl_182` has 0.4327 and `lgbm_price` 0.4538, against 0.5150. The cause was not looked into.
@@ -1441,7 +1441,7 @@ What it shows:
 
 ### 8. What the comparison says about the inputs and the history
 
-This is the answer to RQ2 for LightGBM on the validation days of experiment H. The differences are those of the pair lines of section 7. Each is the mean over the 2000 resamples, so it can differ from the difference of the two table values in the last digit.
+This is the answer to RQ2 for LightGBM on the validation days of experiment H. The differences are those of the pair lines of section 7. Each is the mean over the 2000 resamples, not the difference of the two table values. The two differ by up to 0.0011 in this table.
 
 | Question | Settings compared | Mean relative MAE | Difference | 95% interval | Reading |
 |---|---|---|---|---|---|
@@ -1456,7 +1456,7 @@ This is the answer to RQ2 for LightGBM on the validation days of experiment H. T
 
 - The gain of LightGBM over the statistical baseline comes from the forecast inputs. With the price and the calendar alone it is not clearly ahead of `mstl_182`.
 - The frozen setting keeps the actual load, although it adds nothing. The best setting of step 1 had it, and step 2 changed one thing at a time.
-- **The limit of the weather comparison on all history.** Weather exists from 2024-03-15 only. On all history 1893 of the 2723 training days of the first fit have empty weather features. A tree can split on whether a weather value is empty, and that marks the days from 2024-03-15. So the gain of `lgbm_all` over `lgbm_load` cannot be told apart from a model that treats the recent years on their own. On 826 and on 364 days, where every training day lies in the weather period, the mean is worse with weather.
+- **The limit of the weather comparison on all history.** Weather exists from 2024-03-15 only. On all history 1893 of the 2723 training days of the first fit have empty weather features. A tree can split on whether a weather value is empty, and that marks the days from 2024-03-15. So the gain of `lgbm_all` over `lgbm_load` cannot be told apart from a model that treats the recent years on their own. This is reasoning from how LightGBM treats an empty value. It was not measured. On 826 and on 364 days, where every training day lies in the weather period, the mean is worse with weather.
 - **The window is a trade between zones.** From `lgbm_load` to `lgbm_load_826` DE_LU improves from 0.5724 to 0.5073, and FR, ES, SE_3 and SE_4 improve too. SE_1 gets worse from 0.5834 to 0.6271, and SE_2 from 0.4970 to 0.5160. One window serves all zones (PROJECT_CONTEXT §1).
 - The Swedish zones have no solar feature with a value, so "the forecasts" are the load and the wind forecast there. In SE_1 and SE_2 the results differ on these days, 0.6235 against 0.5122 for the winner, although their prices were identical in almost every hour before 2024-10-30 (entry 48).
 
@@ -1487,6 +1487,8 @@ Recomputed by a reviewer's own code, not by the code of the repo:
 - The halves, the means and the bootstrap lines of section 7 came out the same at seed 42, and stayed stable at two other seeds.
 - On a training day T the values behind the cuts of T were changed. The training rows of T stayed the same to the last bit. Weather from a run after T-1 left the temperature of T empty.
 - A fresh fit for the first validation day of DE_LU on experiment H gave the saved forecast to the last bit: 24 hours, largest difference 0.0. The same holds for the first validation day of DE_LU on experiment Q.
+- The final review of 27 Nov 2026 made the forecasts of two more validation days again from the real tables: 2026-07-07, a day with a fit, and 2026-07-10, a day between two fits. It did so for `lgbm_load_826_slow` in DE_LU and SE_2 on experiment H and in DE_LU on experiment Q, for `lgbm_all_826` in DE_LU on experiment H, and for the quantile model in DE_LU on experiment H. All 10 forecasts equal the saved files to the last bit.
+- In the same 10 cases every value behind the cuts of the day was replaced by noise, and the forecast was made again. It did not change by one bit. As a control, noise in the price of D-1 of the fit day, which the rule allows, changed all 10.
 - The firmness command was first a script outside the repo. On the 15 statistical settings it gave the halves, the zones won, the bootstrap lines and the means without SE_2 of section 8 of the statistical baseline to the printed digits. The command of the repo then gave the output of that script again, for the statistical settings and for the LightGBM settings: 1096 and 927 numbers were compared, and 0 differ.
 
 Leakage:
@@ -1587,7 +1589,15 @@ Experiment Q:
 
 **Why the test values are lower than the validation values.** It is the same as for `mstl_182`. On experiment H the mean relative MAE fell from 0.5316 to 0.4716. The model did not get more accurate: its mean MAE rose from 15.46 to 25.85. The naive forecast got much worse: its mean MAE rose from 29.63 to 54.83. So the ratio fell because the price of 7 days before was a poor forecast in the autumn.
 
-**DE_LU against the published value.** DE_LU has 0.4048 on H and 0.4028 on Q. That is below the published 0.42 for per-hour LightGBM in that zone (PROJECT_CONTEXT §7). The gap is less than 0.02, and the published value is for another period and other inputs. On the validation days DE_LU had 0.4909. From validation to test `mstl_182`, which reads prices only, fell from 0.7106 to 0.4831 in DE_LU. So a fall of this size needs no leak to explain it: a model that reads prices only fell further. The mean of the seven zones, 0.4716, lies inside the published range of 0.42 to 0.48. The Swedish values are 0.43 to 0.51 on H, against the published 0.43 to 0.48.
+**DE_LU against the published value.** DE_LU has 0.4048 on H and 0.4028 on Q. That is below the published 0.42 for per-hour LightGBM in that zone (PROJECT_CONTEXT §7). The gap is less than 0.02, and the published value is for another period and other inputs. On the validation days DE_LU had 0.4909. The final review of 27 Nov 2026 looked for a leak behind this value. It used its own code and read the saved files only:
+
+- The 14 test rows were computed again from the saved forecast files. The largest relative difference to the saved rows is 0.0e+00, and each daily MAE equals `daily_core.csv`.
+- No forecast equals its actual price in any zone.
+- In DE_LU on experiment H `mstl_182` has the lower daily MAE on 34 of the 90 test days.
+- From validation to test the naive MAE of DE_LU on H rose from 34.98 to 68.92 EUR/MWh, and the LightGBM MAE from 17.17 to 27.90.
+- `mstl_182`, which reads prices only, fell from 0.7106 to 0.4831 in relative MAE in DE_LU on H.
+
+No fit was repeated on a test day, so no test forecast was made a second time. The reading of these numbers: a fall of this size needs no leak to explain it, because a model that reads prices only fell further. This is a reading, not a proof. The mean of the seven zones, 0.4716, lies inside the published range of 0.42 to 0.48. The Swedish values are 0.43 to 0.51 on H, against the published 0.43 to 0.48.
 
 The test run must not be run again without asking. The test numbers are known from now on, and they must not steer any later choice.
 
@@ -1648,12 +1658,12 @@ What it shows:
 - **The intervals are too narrow in every zone and in both experiments.** The 50% interval holds 35% to 44% of the prices on H and 31% to 38% on Q. The 90% interval holds 68% to 81% on H and 64% to 79% on Q. In the mean the 90% interval holds 75% on H and 73% on Q.
 - Nothing was recalibrated. The intervals are reported as the model gives them.
 - Crossing is common. Sorting changed 9% to 31% of the hours on H and 19% to 39% of the quarter-hours on Q.
-- The check on the median: twice the pinball loss at 0.5 is within 0.74 EUR/MWh of the point MAE in every zone on H, and within 0.66 on Q. The two need not be equal, because the point forecast is grown on the squared error. A reviewer's own code found that the trees of the level 0.5 equal a `regression_l1` fit of the same entry.
+- The check on the median: twice the pinball loss at 0.5 is set beside the point MAE in the table above. The largest difference is 0.74 EUR/MWh on H and 0.66 on Q. The two need not be equal, because the point forecast is grown on the squared error. A reviewer's own code found that the trees of the level 0.5 equal a `regression_l1` fit of the same entry.
 - The day loops sum to 707.0 seconds on H and 397.0 seconds on Q. The peak memory was 360 MB.
 
 ### 13. Run time: estimate against measured
 
-The owner approved an estimate and a ceiling before each run. The estimate for a setting on all history came from the one timed zone of section 3.
+The owner approved an estimate and a ceiling before the eleven validation runs, before the test run and before the quantile run. For the run on experiment Q no estimate is recorded. It ran under the ceiling of 45 minutes per run. The estimate for a setting on all history came from the one timed zone of section 3.
 
 | Part | Estimate | Ceiling | Measured, command start to end |
 |---|---|---|---|
@@ -1677,13 +1687,14 @@ The owner approved an estimate and a ceiling before each run. The estimate for a
 - On experiment Q the window never applies, the setting was not tuned there, and the training rows start in October 2025 (section 10).
 - The weather comparison is not settled, and on all history it cannot separate weather from the recent years (section 8). The frozen setting uses no weather.
 - The quantile intervals are too narrow and are not recalibrated. In the mean 20% of the hours and 30% of the quarter-hours had crossed values that were sorted.
-- The load forecast and the wind and solar forecast are taken as known before the gate closure. For wind and solar this is an assumption (PROJECT_CONTEXT §5). The gain of 0.1037 rests on these inputs.
+- The load forecast and the wind and solar forecast are taken as known before the gate closure. For wind and solar this is an assumption (PROJECT_CONTEXT §5). The gain from 0.6569 to 0.5539 rests on these inputs.
 - SE_4 has no usable solar forecast, and the solar features are empty in all four Swedish zones. SE_1 and SE_2 are near-duplicates, so the seven zones are not seven independent results.
 - 7 of the 90 ES test days have no wind and no solar forecast.
-- Determinism was measured on made-up tables and on two real days. LightGBM states it for one machine and one version only.
-- On 26 Nov 2026 at about 18:15 a Visual Studio installer replaced the Visual C++ runtime of the machine, and `import lightgbm` failed until it had finished. The determinism runs of section 2 were made before that, the backtest runs after it. Every backtest command imports `lightgbm` now, also for the naive forecast and `mstl_182`.
+- Determinism was measured on made-up tables and on real validation days. A fresh fit gave the saved forecast to the last bit on the first validation day of DE_LU on experiments H and Q, and in the final review on 2026-07-07 and 2026-07-10 (section 9). LightGBM states it for one machine and one version only.
+- On 26 Nov 2026 at about 18:15 local time (12:45 UTC) a Visual Studio installer replaced the Visual C++ runtime of the machine, and `import lightgbm` failed until it had finished. The determinism runs of section 2 were made before that, the backtest runs after it. Every backtest command imports `lightgbm` now, also for the naive forecast and `mstl_182`.
 - `wall_seconds` measures feature building, not the cost of the trees, and the run times are noisy.
-- The checks of section 9 were made on the validation days. For the test days the record is the checks of the run and the row counts of section 11.
+- The checks of section 9 were made on the validation days. For the test days there are the checks of the run and the row counts of section 11. The final review of 27 Nov 2026 also computed the 14 test rows and every daily MAE again from the saved forecast files, with its own code and with no difference. No fit was repeated on a test day.
+- A results row holds the config entry of the model in `model_params`. It does not hold the feature settings under `features` in the config: the price lags, the forecast lags and the columns summed into each forecast feature. A test in `tests/test_config.py` pins that section to the values of the freeze.
 - `src/epf/evaluation/quantiles.py` repeats about 70 lines of `backtest.py`: the day loop and the set-up of a run. The owner kept it so. A test compares the inputs that the quantile loop hands over with those of the backtest.
 - The test numbers are known from now on. They must not steer any later choice.
 
@@ -1702,7 +1713,7 @@ The owner approved an estimate and a ceiling before each run. The estimate for a
 - Any of the eleven names of section 4 can stand in place of `lgbm_load_826_slow` in the backtest command. A run adds rows to `backtest_core.csv` and replaces the rows of the same model, experiment, split and zone in `daily_core.csv`. The table and the firmness command use the newest row of a model and zone.
 - The table command takes `--experiment H` or `Q` and `--split validation` or `test`. It only reads the results file, so it may be run for the test days.
 - The sixth line is one pair of section 7. The model named first is the one the other is compared with.
-- The quantile command adds 14 rows to `quantile_core.csv` at every run and writes its forecast files again.
+- The quantile command adds 14 rows to `quantile_core.csv` at every run and writes its forecast files again. Do not run it again without asking (CLAUDE.md, Commands).
 - Do not run `--model lgbm_load_826_slow --split test` again without asking. The test run was done once, and the ten other LightGBM settings are refused there.
 - Do not run the quantile command with `--split test`. It is refused.
 - Do not run the firmness command with `--split test`. It was run on the validation days only, and it refuses the test days unless every named model stands under `backtest.test_models`.
