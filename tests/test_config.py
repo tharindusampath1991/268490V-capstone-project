@@ -320,3 +320,19 @@ def test_every_zero_shot_candidate_fits_its_model_on_the_15_minute_table():
 
 def test_project_config_forbids_timesfm_to_cut_a_forecast_at_zero():
     assert load_config()["foundation_models"]["timesfm25"]["infer_is_positive"] is False
+
+
+@pytest.mark.parametrize("key, family, name", [("chronos2_model", "chronos2", "chronos2_84"),
+                                               ("timesfm25_model", "timesfm25", "timesfm25_84")])
+def test_project_config_names_the_frozen_setting_of_each_zero_shot_model(key, family, name):
+    config = load_config()
+
+    assert config["backtest"][key] == name
+    assert config["models"][name]["family"] == family
+    assert build_model(config, name).name == name
+
+
+def test_project_config_opens_the_test_days_to_no_zero_shot_setting():
+    test_models = load_config()["backtest"]["test_models"]
+
+    assert not set(test_models) & set(ZERO_SHOT_CANDIDATES)
